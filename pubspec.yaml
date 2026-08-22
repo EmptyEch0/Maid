@@ -50,6 +50,8 @@ dependencies:
   speech_to_text: ^7.0.0
   flutter_tts: ^4.0.2
   permission_handler: ^11.3.1
+  just_audio: ^0.9.40
+  file_picker: ^8.1.7
 
 dev_dependencies:
   flutter_test:

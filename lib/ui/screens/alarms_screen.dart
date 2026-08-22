@@ -29,6 +29,81 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
     super.dispose();
   }
 
+  /// Calculates the time left until the alarm rings
+  static String calculateTimeRemaining(String alarmTime, List<String> repeatDays, {bool isEnabled = true}) {
+    if (!isEnabled) return 'Alarm is off';
+
+    final parts = alarmTime.split(':');
+    if (parts.length != 2) return '';
+    final alarmHour = int.tryParse(parts[0]) ?? 0;
+    final alarmMinute = int.tryParse(parts[1]) ?? 0;
+
+    final now = DateTime.now();
+
+    // If no repeat days, it's a one-time alarm for today or tomorrow
+    if (repeatDays.isEmpty) {
+      var target = DateTime(now.year, now.month, now.day, alarmHour, alarmMinute);
+      if (target.isBefore(now)) {
+        target = target.add(const Duration(days: 1));
+      }
+      return _formatDuration(target.difference(now));
+    }
+
+    // Repeat days: 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'
+    const dayMap = {
+      'Mon': DateTime.monday,
+      'Tue': DateTime.tuesday,
+      'Wed': DateTime.wednesday,
+      'Thu': DateTime.thursday,
+      'Fri': DateTime.friday,
+      'Sat': DateTime.saturday,
+      'Sun': DateTime.sunday,
+    };
+
+    DateTime? closestTarget;
+    for (int i = 0; i < 8; i++) {
+      final checkDate = now.add(Duration(days: i));
+      final checkTarget = DateTime(checkDate.year, checkDate.month, checkDate.day, alarmHour, alarmMinute);
+      if (checkTarget.isBefore(now)) continue;
+
+      final weekdayName = dayMap.entries
+          .firstWhere((e) => e.value == checkDate.weekday, orElse: () => const MapEntry('', 0))
+          .key;
+      if (repeatDays.contains(weekdayName)) {
+        closestTarget = checkTarget;
+        break;
+      }
+    }
+
+    if (closestTarget == null) {
+      var target = DateTime(now.year, now.month, now.day, alarmHour, alarmMinute);
+      if (target.isBefore(now)) {
+        target = target.add(const Duration(days: 1));
+      }
+      return _formatDuration(target.difference(now));
+    }
+
+    return _formatDuration(closestTarget.difference(now));
+  }
+
+  static String _formatDuration(Duration diff) {
+    final totalMinutes = diff.inMinutes;
+    final days = diff.inDays;
+    final hours = diff.inHours % 24;
+    final minutes = totalMinutes % 60;
+
+    if (totalMinutes <= 0) {
+      return 'in less than 1 min';
+    }
+
+    final parts = <String>[];
+    if (days > 0) parts.add('${days}d');
+    if (hours > 0) parts.add('${hours}h');
+    if (minutes > 0 || (days == 0 && hours == 0)) parts.add('${minutes}m');
+
+    return 'in ${parts.join(' ')}';
+  }
+
   void _showAddEditAlarmDialog(BuildContext context, [AlarmItem? alarm]) {
     final provider = Provider.of<AppProvider>(context, listen: false);
     TimeOfDay selectedTime = TimeOfDay.now();
@@ -43,7 +118,7 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
     final descController = TextEditingController(text: alarm?.description ?? '');
     final List<String> weekDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
     final Set<String> selectedDays = Set.from(alarm?.repeatDays ?? []);
-    String ringtone = alarm?.soundRingtone ?? 'Gentle Chime';
+    String ringtone = alarm?.soundRingtone ?? provider.defaultAlarmTone;
     int snoozeMins = alarm?.snoozeDurationMinutes ?? 5;
 
     showModalBottomSheet(
@@ -59,6 +134,11 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
             final theme = Theme.of(context);
             final colorScheme = theme.colorScheme;
             final formattedTimeStr = selectedTime.format(context);
+
+            final h = selectedTime.hour.toString().padLeft(2, '0');
+            final m = selectedTime.minute.toString().padLeft(2, '0');
+            final timeStr = '$h:$m';
+            final timeRemainingPreview = calculateTimeRemaining(timeStr, selectedDays.toList());
 
             return Padding(
               padding: EdgeInsets.only(
@@ -89,7 +169,7 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
                     ),
                     const SizedBox(height: 16),
 
-                    // Big Time Selector Box
+                    // Big Time Selector Box with Live Remaining Time Preview
                     InkWell(
                       onTap: () async {
                         final picked = await showTimePicker(
@@ -105,37 +185,65 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
                       borderRadius: BorderRadius.circular(20),
                       child: Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 24),
+                        padding: const EdgeInsets.symmetric(vertical: 18, horizontal: 20),
                         decoration: BoxDecoration(
                           color: colorScheme.primaryContainer.withValues(alpha: 0.5),
                           borderRadius: BorderRadius.circular(20),
                           border: Border.all(color: colorScheme.primary.withValues(alpha: 0.3)),
                         ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
-                                Text(
-                                  'ALARM TIME',
-                                  style: theme.textTheme.labelMedium?.copyWith(
-                                    fontWeight: FontWeight.bold,
-                                    letterSpacing: 1.2,
-                                    color: colorScheme.primary,
-                                  ),
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      'ALARM TIME',
+                                      style: theme.textTheme.labelMedium?.copyWith(
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 1.2,
+                                        color: colorScheme.primary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      formattedTimeStr,
+                                      style: theme.textTheme.displayMedium?.copyWith(
+                                        fontWeight: FontWeight.w900,
+                                        color: colorScheme.onPrimaryContainer,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  formattedTimeStr,
-                                  style: theme.textTheme.displayMedium?.copyWith(
-                                    fontWeight: FontWeight.w900,
-                                    color: colorScheme.onPrimaryContainer,
-                                  ),
-                                ),
+                                Icon(Icons.access_time_filled_rounded, size: 36, color: colorScheme.primary),
                               ],
                             ),
-                            Icon(Icons.access_time_filled_rounded, size: 36, color: colorScheme.primary),
+                            const SizedBox(height: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: colorScheme.primary.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(10),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.timer_outlined, size: 14, color: colorScheme.primary),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    'Alarm will ring $timeRemainingPreview',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w700,
+                                      color: colorScheme.primary,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -183,6 +291,7 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
                     const SizedBox(height: 8),
                     Wrap(
                       spacing: 8,
+                      runSpacing: 8,
                       children: weekDays.map((day) {
                         final isSel = selectedDays.contains(day);
                         return FilterChip(
@@ -203,15 +312,23 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
 
                     const SizedBox(height: 20),
 
-                    // Ringtone & Snooze
+                    // Ringtone & Snooze with Tone Preview Button
                     Row(
                       children: [
                         Expanded(
+                          flex: 3,
                           child: DropdownButtonFormField<String>(
-                            initialValue: provider.availableAlarmTones.contains(ringtone) ? ringtone : provider.availableAlarmTones.first,
+                            initialValue: provider.availableAlarmTones.contains(ringtone)
+                                ? ringtone
+                                : provider.availableAlarmTones.first,
                             decoration: InputDecoration(
                               labelText: 'Ringtone',
                               prefixIcon: const Icon(Icons.music_note_rounded),
+                              suffixIcon: IconButton(
+                                icon: const Icon(Icons.play_circle_fill_rounded, color: Colors.orangeAccent, size: 20),
+                                tooltip: 'Preview Sound',
+                                onPressed: () => provider.previewPlayTone(ringtone),
+                              ),
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
                             ),
                             items: provider.availableAlarmTones.map((tone) {
@@ -225,8 +342,9 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
                             },
                           ),
                         ),
-                        const SizedBox(width: 12),
+                        const SizedBox(width: 10),
                         Expanded(
+                          flex: 2,
                           child: DropdownButtonFormField<int>(
                             initialValue: snoozeMins,
                             decoration: InputDecoration(
@@ -235,9 +353,9 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
                               border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
                             ),
                             items: const [
-                              DropdownMenuItem(value: 3, child: Text('3 mins')),
-                              DropdownMenuItem(value: 5, child: Text('5 mins')),
-                              DropdownMenuItem(value: 10, child: Text('10 mins')),
+                              DropdownMenuItem(value: 3, child: Text('3m')),
+                              DropdownMenuItem(value: 5, child: Text('5m')),
+                              DropdownMenuItem(value: 10, child: Text('10m')),
                             ],
                             onChanged: (val) {
                               if (val != null) setModalState(() => snoozeMins = val);
@@ -265,6 +383,7 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
                           final timeStr = '$h:$m';
 
                           final nav = Navigator.of(context);
+                          final scaffold = ScaffoldMessenger.of(context);
                           final newAlarm = AlarmItem(
                             id: alarm?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
                             title: titleController.text.trim().isNotEmpty
@@ -280,6 +399,23 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
 
                           await provider.addAlarm(newAlarm);
                           nav.pop();
+
+                          final remaining = calculateTimeRemaining(timeStr, selectedDays.toList());
+                          scaffold.showSnackBar(
+                            SnackBar(
+                              content: Row(
+                                children: [
+                                  const Icon(Icons.alarm_on_rounded, color: Colors.white, size: 20),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text('Alarm set for $timeStr (rings $remaining)'),
+                                  ),
+                                ],
+                              ),
+                              behavior: SnackBarBehavior.floating,
+                              duration: const Duration(seconds: 4),
+                            ),
+                          );
                         },
                         icon: const Icon(Icons.check_rounded),
                         label: Text(alarm == null ? 'Save Alarm' : 'Update Alarm'),
@@ -503,6 +639,7 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
+    final timeRemaining = calculateTimeRemaining(alarm.time, alarm.repeatDays, isEnabled: alarm.isEnabled);
 
     return GlassCard(
       margin: const EdgeInsets.only(bottom: 14),
@@ -514,36 +651,94 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    alarm.time,
-                    style: TextStyle(
-                      fontSize: 32,
-                      fontWeight: FontWeight.w900,
-                      color: alarm.isEnabled
-                          ? (isDark ? Colors.white : const Color(0xFF0F172A))
-                          : (isDark ? Colors.white38 : Colors.grey),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      alarm.time,
+                      style: TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.w900,
+                        color: alarm.isEnabled
+                            ? (isDark ? Colors.white : const Color(0xFF0F172A))
+                            : (isDark ? Colors.white38 : Colors.grey),
+                      ),
                     ),
-                  ),
-                  Text(
-                    alarm.title,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: FontWeight.bold,
-                      color: alarm.isEnabled ? colorScheme.primary : Colors.grey,
+                    Text(
+                      alarm.title,
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.bold,
+                        color: alarm.isEnabled ? colorScheme.primary : Colors.grey,
+                      ),
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
               Switch(
                 value: alarm.isEnabled,
                 onChanged: (_) {
                   provider.toggleAlarmStatus(alarm);
+                  if (!alarm.isEnabled) {
+                    final remaining = calculateTimeRemaining(alarm.time, alarm.repeatDays, isEnabled: true);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Row(
+                          children: [
+                            const Icon(Icons.alarm_on_rounded, color: Colors.white, size: 20),
+                            const SizedBox(width: 10),
+                            Text('Alarm enabled (rings $remaining)'),
+                          ],
+                        ),
+                        behavior: SnackBarBehavior.floating,
+                        duration: const Duration(seconds: 3),
+                      ),
+                    );
+                  }
                 },
               ),
             ],
+          ),
+
+          const SizedBox(height: 8),
+
+          // Time Remaining Badge
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              color: alarm.isEnabled
+                  ? colorScheme.primary.withValues(alpha: isDark ? 0.18 : 0.1)
+                  : (isDark ? Colors.white10 : Colors.grey.shade200),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: alarm.isEnabled
+                    ? colorScheme.primary.withValues(alpha: 0.3)
+                    : Colors.grey.withValues(alpha: 0.2),
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  alarm.isEnabled ? Icons.schedule_rounded : Icons.alarm_off_rounded,
+                  size: 14,
+                  color: alarm.isEnabled ? colorScheme.primary : Colors.grey,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  alarm.isEnabled ? 'Rings $timeRemaining' : 'Alarm is turned off',
+                  style: TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: alarm.isEnabled
+                        ? (isDark ? colorScheme.primary : const Color(0xFF4F46E5))
+                        : Colors.grey,
+                  ),
+                ),
+              ],
+            ),
           ),
 
           const SizedBox(height: 10),
@@ -580,59 +775,98 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
             const SizedBox(height: 10),
           ],
 
-          // Repeat Days & Actions Row
+          // Repeat Days and Ringtone Info (Bounded with Expanded / Wrap to prevent overflow)
           Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // Repeat Days Chips
+              // Repeat Days Chips or One-time Alarm label
               if (alarm.repeatDays.isNotEmpty)
-                Wrap(
-                  spacing: 4,
-                  children: alarm.repeatDays.map((d) {
-                    return GlassPillBadge(
-                      label: d,
-                      color: colorScheme.secondary,
-                    );
-                  }).toList(),
+                Expanded(
+                  child: Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
+                    children: alarm.repeatDays.map((d) {
+                      return GlassPillBadge(
+                        label: d,
+                        color: colorScheme.secondary,
+                      );
+                    }).toList(),
+                  ),
                 )
               else
-                Text(
-                  'One-time Alarm',
-                  style: theme.textTheme.labelSmall?.copyWith(color: Colors.grey),
+                Expanded(
+                  child: Text(
+                    'One-time Alarm',
+                    style: theme.textTheme.labelSmall?.copyWith(color: Colors.grey),
+                  ),
                 ),
 
-              // Action Buttons
-              Row(
-                children: [
-                  // Quick Reschedule / Delay Button
-                  IconButton(
-                    icon: const Icon(Icons.schedule_send_rounded, color: Color(0xFF6366F1)),
-                    tooltip: 'Reschedule / Delay Alarm',
-                    onPressed: () {
-                      UniversalRescheduleDialog.showForAlarm(context, alarm);
-                    },
-                  ),
-                  // Test Ring Button
-                  IconButton(
-                    icon: const Icon(Icons.notifications_active_rounded, color: Colors.orangeAccent),
-                    tooltip: 'Test Ring Alarm',
-                    onPressed: () {
-                      AlarmRingingDialog.show(context, alarm);
-                    },
-                  ),
-                  // Edit Button
-                  IconButton(
-                    icon: const Icon(Icons.edit_rounded),
-                    tooltip: 'Edit Alarm',
-                    onPressed: () => _showAddEditAlarmDialog(context, alarm),
-                  ),
-                  // Delete Button
-                  IconButton(
-                    icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
-                    tooltip: 'Delete Alarm',
-                    onPressed: () => provider.deleteAlarm(alarm.id),
-                  ),
-                ],
+              const SizedBox(width: 8),
+
+              // Ringtone info badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.music_note_rounded, size: 12, color: colorScheme.primary),
+                    const SizedBox(width: 4),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 90),
+                      child: Text(
+                        alarm.soundRingtone,
+                        style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+
+          const SizedBox(height: 6),
+          const Divider(height: 12, thickness: 0.5),
+
+          // Action Buttons Toolbar Row (Clean, responsive, compact)
+          Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              // Quick Reschedule / Delay Button
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.schedule_send_rounded, color: Color(0xFF6366F1), size: 20),
+                tooltip: 'Reschedule / Delay Alarm',
+                onPressed: () {
+                  UniversalRescheduleDialog.showForAlarm(context, alarm);
+                },
+              ),
+              // Test Ring Button
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.notifications_active_rounded, color: Colors.orangeAccent, size: 20),
+                tooltip: 'Test Ring Alarm',
+                onPressed: () {
+                  AlarmRingingDialog.show(context, alarm);
+                },
+              ),
+              // Edit Button
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.edit_rounded, size: 20),
+                tooltip: 'Edit Alarm',
+                onPressed: () => _showAddEditAlarmDialog(context, alarm),
+              ),
+              // Delete Button
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
+                tooltip: 'Delete Alarm',
+                onPressed: () => provider.deleteAlarm(alarm.id),
               ),
             ],
           ),
@@ -732,3 +966,4 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
     );
   }
 }
+

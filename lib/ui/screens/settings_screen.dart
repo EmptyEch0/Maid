@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:file_picker/file_picker.dart';
 import '../../providers/app_provider.dart';
 import '../../services/database_helper.dart';
 import '../widgets/glass_widgets.dart';
@@ -12,65 +13,149 @@ class SettingsScreen extends StatelessWidget {
 
   void _showAddCustomToneDialog(BuildContext context, AppProvider provider, {required bool isAlarmTone}) {
     final textCtrl = TextEditingController();
+    String? selectedFilePath;
     final presets = isAlarmTone
         ? ['Morning Sunrise', 'Birds Chirping', 'Digital Beep', 'Guitar Strum', 'Loud Siren', 'Zen Bell']
         : ['Soft Chime', 'Double Pulse', 'Marimba Note', 'Triple Ping', 'Gentle Alert'];
 
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(isAlarmTone ? 'Add Custom Alarm Tone' : 'Add Custom Reminder Tone'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            TextField(
-              controller: textCtrl,
-              decoration: InputDecoration(
-                labelText: 'Tone Name / Audio Label',
-                hintText: 'e.g. Energetic Beat, Peaceful Flute',
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: Text(isAlarmTone ? 'Add Custom Alarm Tone' : 'Add Custom Reminder Tone'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: textCtrl,
+                    decoration: InputDecoration(
+                      labelText: 'Tone Name / Audio Label',
+                      hintText: 'e.g. Energetic Beat, Peaceful Flute',
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Pick from Device button
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () async {
+                        try {
+                          final result = await FilePicker.platform.pickFiles(
+                            type: FileType.custom,
+                            allowedExtensions: ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac'],
+                            dialogTitle: 'Select Alarm Ringtone',
+                          );
+                          if (result != null && result.files.single.path != null) {
+                            final path = result.files.single.path!;
+                            final fileName = result.files.single.name;
+                            setDialogState(() {
+                              selectedFilePath = path;
+                              if (textCtrl.text.trim().isEmpty) {
+                                // Auto-fill name from file name (without extension)
+                                textCtrl.text = fileName.replaceAll(RegExp(r'\.[^.]+$'), '');
+                              }
+                            });
+                          }
+                        } catch (_) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Could not open file picker')),
+                            );
+                          }
+                        }
+                      },
+                      icon: const Icon(Icons.folder_open_rounded),
+                      label: const Text('Pick Audio from Device'),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                      ),
+                    ),
+                  ),
+
+                  // Show selected file path
+                  if (selectedFilePath != null) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Colors.green.withValues(alpha: 0.1),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.green.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.music_note_rounded, color: Colors.green, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              selectedFilePath!.split('/').last,
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.green),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          InkWell(
+                            onTap: () => setDialogState(() => selectedFilePath = null),
+                            child: const Icon(Icons.close_rounded, size: 16, color: Colors.green),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 16),
+                  const Text('Or pick a preset:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                  const SizedBox(height: 8),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: presets.map((p) {
+                      return ActionChip(
+                        label: Text(p),
+                        onPressed: () {
+                          textCtrl.text = p;
+                          setDialogState(() => selectedFilePath = null);
+                        },
+                      );
+                    }).toList(),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(height: 16),
-            const Text('Or pick a preset:', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 6,
-              children: presets.map((p) {
-                return ActionChip(
-                  label: Text(p),
-                  onPressed: () {
-                    textCtrl.text = p;
-                  },
-                );
-              }).toList(),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () {
-              final name = textCtrl.text.trim();
-              if (name.isNotEmpty) {
-                if (isAlarmTone) {
-                  provider.addCustomAlarmTone(name);
-                } else {
-                  provider.addCustomReminderTone(name);
-                }
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Added custom tone: "$name"')),
-                );
-              }
-            },
-            child: const Text('Add Tone'),
-          ),
-        ],
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              ElevatedButton(
+                onPressed: () {
+                  final name = textCtrl.text.trim();
+                  if (name.isNotEmpty) {
+                    if (isAlarmTone) {
+                      provider.addCustomAlarmTone(name, filePath: selectedFilePath);
+                    } else {
+                      provider.addCustomReminderTone(name, filePath: selectedFilePath);
+                    }
+                    Navigator.pop(ctx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(selectedFilePath != null
+                            ? 'Added custom tone: "$name" with audio file'
+                            : 'Added custom tone: "$name"'),
+                      ),
+                    );
+                  }
+                },
+                child: const Text('Add Tone'),
+              ),
+            ],
+          );
+        },
       ),
     );
   }

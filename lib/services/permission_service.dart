@@ -38,6 +38,12 @@ class PermissionService {
         if (!exactAlarmStatus.isGranted) {
           await Permission.scheduleExactAlarm.request();
         }
+
+        // 5. Request Audio / Storage permission for custom ringtones
+        final audioStatus = await Permission.audio.status;
+        if (!audioStatus.isGranted) {
+          await Permission.audio.request();
+        }
       }
     } catch (e) {
       debugPrint('Permission request error: $e');

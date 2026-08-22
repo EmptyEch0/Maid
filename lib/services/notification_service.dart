@@ -67,15 +67,23 @@ class NotificationService {
 
       const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
         'maid_channel_id',
-        'Maid Reminders',
+        'Maid Reminders & Alarms',
         channelDescription: 'Local scheduled event & task notifications',
-        importance: Importance.high,
-        priority: Priority.high,
+        importance: Importance.max,
+        priority: Priority.max,
+        playSound: true,
+        enableVibration: true,
+        fullScreenIntent: true,
+        category: AndroidNotificationCategory.alarm,
       );
 
       const NotificationDetails details = NotificationDetails(
         android: androidDetails,
-        iOS: DarwinNotificationDetails(),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
       );
 
       await _notifications.zonedSchedule(

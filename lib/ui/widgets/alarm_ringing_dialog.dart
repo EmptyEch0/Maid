@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/app_models.dart';
 import '../../providers/app_provider.dart';
-import '../../services/audio_haptics_service.dart';
+import '../../services/alarm_sound_service.dart';
 
 class AlarmRingingDialog extends StatefulWidget {
   final AlarmItem alarm;
@@ -27,7 +27,6 @@ class AlarmRingingDialog extends StatefulWidget {
 
 class _AlarmRingingDialogState extends State<AlarmRingingDialog> with SingleTickerProviderStateMixin {
   late AnimationController _pulseController;
-  Timer? _soundHapticTimer;
 
   @override
   void initState() {
@@ -37,17 +36,17 @@ class _AlarmRingingDialogState extends State<AlarmRingingDialog> with SingleTick
       duration: const Duration(milliseconds: 1000),
     )..repeat(reverse: true);
 
-    // Play periodic alert ring haptics
-    AudioHapticsService.playPhaseTransitionAlert(isBreakStarting: false);
-    _soundHapticTimer = Timer.periodic(const Duration(milliseconds: 1800), (_) {
-      AudioHapticsService.playPhaseTransitionAlert(isBreakStarting: false);
-    });
+    // Play actual alarm sound using the alarm's tone file path
+    final provider = Provider.of<AppProvider>(context, listen: false);
+    final filePath = provider.getToneFilePath(widget.alarm.soundRingtone);
+    AlarmSoundService.instance.playAlarmSound(filePath: filePath, loop: true);
   }
 
   @override
   void dispose() {
     _pulseController.dispose();
-    _soundHapticTimer?.cancel();
+    // Stop alarm sound when dialog is disposed
+    AlarmSoundService.instance.stopAlarmSound();
     super.dispose();
   }
 
@@ -196,6 +195,7 @@ class _AlarmRingingDialogState extends State<AlarmRingingDialog> with SingleTick
                             ),
                           ),
                           onPressed: () {
+                            AlarmSoundService.instance.stopAlarmSound();
                             Provider.of<AppProvider>(context, listen: false).snoozeAlarm(widget.alarm);
                             Navigator.of(context).pop();
                           },
@@ -221,6 +221,7 @@ class _AlarmRingingDialogState extends State<AlarmRingingDialog> with SingleTick
                             elevation: 4,
                           ),
                           onPressed: () {
+                            AlarmSoundService.instance.stopAlarmSound();
                             Provider.of<AppProvider>(context, listen: false).dismissAlarm(widget.alarm);
                             Navigator.of(context).pop();
                           },
@@ -242,3 +243,4 @@ class _AlarmRingingDialogState extends State<AlarmRingingDialog> with SingleTick
     );
   }
 }
+

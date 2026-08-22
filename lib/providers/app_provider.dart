@@ -10,7 +10,7 @@ import '../engine/weekly_review_engine.dart';
 import '../engine/nlp_parser_engine.dart';
 
 import '../services/alarm_service.dart';
-import '../services/audio_haptics_service.dart';
+import '../services/alarm_sound_service.dart';
 import '../services/permission_service.dart';
 import '../services/speech_service.dart';
 
@@ -36,6 +36,9 @@ class AppProvider extends ChangeNotifier {
   List<String> _customReminderTones = ['Default Chime', 'Soft Bell', 'Double Click', 'Ping Alert', 'Zen Gong'];
   String _defaultAlarmTone = 'Gentle Chime';
   String _defaultReminderTone = 'Default Chime';
+
+  // Maps tone names to their file paths (null = system/preset tone)
+  final Map<String, String?> _toneFilePaths = {};
 
   final Map<String, List<ChecklistItem>> _checklists = {};
 
@@ -83,6 +86,17 @@ class AppProvider extends ChangeNotifier {
     final savedReminderTones = prefs.getStringList('custom_reminder_tones');
     if (savedReminderTones != null && savedReminderTones.isNotEmpty) {
       _customReminderTones = savedReminderTones;
+    }
+
+    // Load tone file path mappings
+    final tonePathsJson = prefs.getString('tone_file_paths');
+    if (tonePathsJson != null) {
+      try {
+        final Map<String, dynamic> decoded = jsonDecode(tonePathsJson);
+        decoded.forEach((key, value) {
+          _toneFilePaths[key] = value as String?;
+        });
+      } catch (_) {}
     }
 
     await NotificationService.instance.init();
@@ -380,24 +394,41 @@ class AppProvider extends ChangeNotifier {
   }
 
   // --- TONE MANAGEMENT ---
-  Future<void> addCustomAlarmTone(String toneName) async {
+  Future<void> addCustomAlarmTone(String toneName, {String? filePath}) async {
     final trimmed = toneName.trim();
     if (trimmed.isNotEmpty && !_customAlarmTones.contains(trimmed)) {
       _customAlarmTones.add(trimmed);
+      if (filePath != null && filePath.isNotEmpty) {
+        _toneFilePaths[trimmed] = filePath;
+      }
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList('custom_alarm_tones', _customAlarmTones);
+      await _saveToneFilePaths(prefs);
       notifyListeners();
     }
   }
 
-  Future<void> addCustomReminderTone(String toneName) async {
+  Future<void> addCustomReminderTone(String toneName, {String? filePath}) async {
     final trimmed = toneName.trim();
     if (trimmed.isNotEmpty && !_customReminderTones.contains(trimmed)) {
       _customReminderTones.add(trimmed);
+      if (filePath != null && filePath.isNotEmpty) {
+        _toneFilePaths[trimmed] = filePath;
+      }
       final prefs = await SharedPreferences.getInstance();
       await prefs.setStringList('custom_reminder_tones', _customReminderTones);
+      await _saveToneFilePaths(prefs);
       notifyListeners();
     }
+  }
+
+  Future<void> _saveToneFilePaths(SharedPreferences prefs) async {
+    await prefs.setString('tone_file_paths', jsonEncode(_toneFilePaths));
+  }
+
+  /// Get the file path for a tone name (null if system/preset tone)
+  String? getToneFilePath(String toneName) {
+    return _toneFilePaths[toneName];
   }
 
   Future<void> setDefaultAlarmTone(String toneName) async {
@@ -415,7 +446,8 @@ class AppProvider extends ChangeNotifier {
   }
 
   void previewPlayTone(String toneName) {
-    AudioHapticsService.playPhaseTransitionAlert(isBreakStarting: true);
+    final filePath = getToneFilePath(toneName);
+    AlarmSoundService.instance.playPreview(filePath: filePath);
   }
 
   // --- ALARMS ---
