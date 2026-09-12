@@ -6,12 +6,11 @@ import '../providers/app_provider.dart';
 import '../services/alarm_service.dart';
 import 'app_lock_screen.dart';
 import 'screens/voice_assistant_screen.dart';
-import 'screens/calendar_screen.dart';
 import 'screens/tasks_inbox_screen.dart';
+import 'screens/alarms_screen.dart';
+import 'screens/calendar_screen.dart';
 import 'screens/study_timer_screen.dart';
 import 'screens/notes_screen.dart';
-import 'screens/alarms_screen.dart';
-import 'screens/dsa_plan_screen.dart';
 import 'screens/analytics_screen.dart';
 import 'screens/settings_screen.dart';
 import 'widgets/alarm_ringing_dialog.dart';
@@ -30,10 +29,9 @@ class _HomeShellState extends State<HomeShell> {
 
   final List<Widget> _screens = const [
     VoiceAssistantScreen(),
-    CalendarScreen(),
-    DsaPlanScreen(),
     TasksInboxScreen(),
     AlarmsScreen(),
+    CalendarScreen(),
     StudyTimerScreen(),
     NotesScreen(),
     AnalyticsScreen(),
@@ -73,10 +71,10 @@ class _HomeShellState extends State<HomeShell> {
       ),
       floatingActionButton: VoiceQuickActionFab(
         onOpenAddAlarm: () {
-          setState(() => _currentIndex = 4); // Switch to Alarms tab
+          setState(() => _currentIndex = 2); // Switch to Alarms tab
         },
         onOpenAddHabit: () {
-          setState(() => _currentIndex = 4); // Switch to Alarms/Habits tab
+          setState(() => _currentIndex = 2); // Switch to Alarms/Habits tab
         },
       ),
       bottomNavigationBar: NavigationBar(
@@ -88,10 +86,9 @@ class _HomeShellState extends State<HomeShell> {
         },
         destinations: const [
           NavigationDestination(icon: Icon(Icons.auto_awesome_rounded), label: 'Assistant'),
-          NavigationDestination(icon: Icon(Icons.calendar_month_rounded), label: 'Calendar'),
-          NavigationDestination(icon: Icon(Icons.workspace_premium_rounded), label: '90-Day DSA'),
           NavigationDestination(icon: Icon(Icons.task_alt_rounded), label: 'Tasks'),
           NavigationDestination(icon: Icon(Icons.alarm_rounded), label: 'Alarms'),
+          NavigationDestination(icon: Icon(Icons.calendar_month_rounded), label: 'Calendar'),
           NavigationDestination(icon: Icon(Icons.timer_rounded), label: 'Study'),
           NavigationDestination(icon: Icon(Icons.note_alt_rounded), label: 'Notes'),
           NavigationDestination(icon: Icon(Icons.bar_chart_rounded), label: 'Review'),

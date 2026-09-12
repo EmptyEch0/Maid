@@ -256,7 +256,7 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
                       controller: titleController,
                       decoration: InputDecoration(
                         labelText: 'Alarm Title / Label',
-                        hintText: 'e.g. Morning Wakeup, LeetCode Session',
+                        hintText: 'e.g. Morning Wakeup, Gym Session, Project Review',
                         prefixIcon: const Icon(Icons.label_rounded),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
                       ),
@@ -270,7 +270,7 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
                       maxLines: 3,
                       decoration: InputDecoration(
                         labelText: 'Unique Description / Notes for Alarm',
-                        hintText: 'e.g. Wake up! Drink 500ml water, solve 2 DSA problems.',
+                        hintText: 'e.g. Wake up, drink 500ml water, review daily priorities.',
                         alignLabelWithHint: true,
                         prefixIcon: const Padding(
                           padding: EdgeInsets.only(bottom: 40),
@@ -479,7 +479,7 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
                     controller: titleCtrl,
                     decoration: InputDecoration(
                       labelText: 'Habit Title',
-                      hintText: 'e.g. Drink 2L Water, Morning Run, Solve 2 LeetCode',
+                      hintText: 'e.g. Drink 2L Water, Morning Meditation, Deep Work',
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
                     ),
                   ),
@@ -488,7 +488,7 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
                     controller: descCtrl,
                     decoration: InputDecoration(
                       labelText: 'Goal Description (optional)',
-                      hintText: 'e.g. Morning 10am + Evening 8pm problems',
+                      hintText: 'e.g. 30 minutes reading, daily focus routine',
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
                     ),
                   ),

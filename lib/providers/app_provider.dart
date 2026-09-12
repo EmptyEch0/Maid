@@ -103,92 +103,25 @@ class AppProvider extends ChangeNotifier {
     await PermissionService.instance.requestAllAppPermissions();
     await SpeechService.instance.init();
     await refreshData();
-    await _ensureLeetcodeSchedulesAndAlarms();
 
     AlarmService.instance.startMonitoring(() => _alarms);
   }
 
-  Future<void> _ensureLeetcodeSchedulesAndAlarms() async {
-    final db = DatabaseHelper.instance;
-    final allDays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  // --- HELPER GETTERS FOR TODAY'S WORK & TASKS ---
+  List<TaskItem> get todayTasks {
+    return _tasks.where((t) => t.dueDate == selectedDateStr || t.dueDate == null).toList();
+  }
 
-    // 1. Check Morning LeetCode Alarm (10:00 AM)
-    final hasMorningAlarm = _alarms.any((a) => a.time == '10:00' && a.title.toLowerCase().contains('leetcode'));
-    if (!hasMorningAlarm) {
-      final morningAlarm = AlarmItem(
-        id: 'leetcode_morning_10am',
-        title: 'LeetCode Problem Solving (Morning)',
-        time: '10:00',
-        description: 'Morning LeetCode Session: Solve 1-2 DSA practice problems & analyze time complexity.',
-        isEnabled: true,
-        repeatDays: allDays,
-        soundRingtone: 'Gentle Chime',
-      );
-      await db.insertAlarm(morningAlarm);
-    }
+  List<TaskItem> get pendingTodayTasks {
+    return _tasks.where((t) => (t.dueDate == selectedDateStr || t.dueDate == null) && t.status != 'completed').toList();
+  }
 
-    // 2. Check Evening LeetCode Alarm (8:00 PM / 20:00)
-    final hasEveningAlarm = _alarms.any((a) => a.time == '20:00' && a.title.toLowerCase().contains('leetcode'));
-    if (!hasEveningAlarm) {
-      final eveningAlarm = AlarmItem(
-        id: 'leetcode_evening_8pm',
-        title: 'LeetCode Problem Solving (Evening)',
-        time: '20:00',
-        description: 'Evening LeetCode Session: Solve 1-2 DSA practice problems & review mistake log.',
-        isEnabled: true,
-        repeatDays: allDays,
-        soundRingtone: 'Energetic Pulse',
-      );
-      await db.insertAlarm(eveningAlarm);
-    }
+  List<TaskItem> get pendingAllTasks {
+    return _tasks.where((t) => t.status != 'completed').toList();
+  }
 
-    // 3. Check Morning LeetCode Recurrence Rule (10:00 - 11:00)
-    final hasMorningRule = _recurrenceRules.any((r) => r.startTime == '10:00' && r.title.toLowerCase().contains('leetcode'));
-    if (!hasMorningRule) {
-      final morningRule = RecurrenceRule(
-        id: 'rec_leetcode_10am',
-        title: 'LeetCode Problem Solving (Morning)',
-        daysOfWeek: 'MON,TUE,WED,THU,FRI,SAT,SUN',
-        startTime: '10:00',
-        endTime: '11:00',
-        category: 'Study',
-      );
-      await db.insertRecurrenceRule(morningRule);
-    }
-
-    // 4. Check Evening LeetCode Recurrence Rule (20:00 - 21:00)
-    final hasEveningRule = _recurrenceRules.any((r) => r.startTime == '20:00' && r.title.toLowerCase().contains('leetcode'));
-    if (!hasEveningRule) {
-      final eveningRule = RecurrenceRule(
-        id: 'rec_leetcode_8pm',
-        title: 'LeetCode Problem Solving (Evening)',
-        daysOfWeek: 'MON,TUE,WED,THU,FRI,SAT,SUN',
-        startTime: '20:00',
-        endTime: '21:00',
-        category: 'Study',
-      );
-      await db.insertRecurrenceRule(eveningRule);
-    }
-
-    // 5. Check LeetCode Daily Habit
-    final hasLeetcodeHabit = _habits.any((h) => h.title.toLowerCase().contains('leetcode'));
-    if (!hasLeetcodeHabit) {
-      final leetcodeHabit = HabitItem(
-        id: 'habit_leetcode_daily',
-        title: 'LeetCode Daily Practice (2 Problems)',
-        description: 'Solve 1 morning problem (10:00 AM) and 1 evening problem (8:00 PM)',
-        category: 'Study',
-        targetDaysPerWeek: 7,
-      );
-      await db.insertHabit(leetcodeHabit);
-    }
-
-    // Refresh state after seeding
-    _events = await db.getEvents();
-    _recurrenceRules = await db.getRecurrenceRules();
-    _alarms = await db.getAlarms();
-    _habits = await db.getHabits();
-    notifyListeners();
+  List<TaskItem> get completedTodayTasks {
+    return _tasks.where((t) => (t.dueDate == selectedDateStr || t.dueDate == null) && t.status == 'completed').toList();
   }
 
   Future<void> refreshData() async {

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../models/app_models.dart';
 import '../../providers/app_provider.dart';
 import '../../services/speech_service.dart';
 import '../../services/tts_service.dart';
@@ -26,6 +27,7 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> with Single
   LocalQueryResult? _lastResult;
 
   final TextEditingController _textInputCtrl = TextEditingController();
+  final TextEditingController _quickTaskCtrl = TextEditingController();
 
   @override
   void initState() {
@@ -35,9 +37,9 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> with Single
       duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
 
-    // Initial greeting out loud
+    // Initial greeting / day overview out loud
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      _executeAssistantQuery("what is today schedule");
+      _executeAssistantQuery("tell my work and today tasks");
     });
   }
 
@@ -46,6 +48,8 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> with Single
     _orbController.dispose();
     _ttsService.stop();
     _speechService.stop();
+    _textInputCtrl.dispose();
+    _quickTaskCtrl.dispose();
     super.dispose();
   }
 
@@ -120,8 +124,10 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> with Single
     });
 
     // Speak natural response out loud
-    _ttsService.speak(result.spokenText).then((_) {
-      if (mounted) setState(() => _isSpeaking = false);
+    _ttsService.stop().then((_) {
+      _ttsService.speak(result.spokenText).then((_) {
+        if (mounted) setState(() => _isSpeaking = false);
+      });
     });
   }
 
@@ -129,6 +135,8 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> with Single
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final provider = Provider.of<AppProvider>(context);
+    final pendingToday = provider.pendingTodayTasks;
 
     return Scaffold(
       appBar: AppBar(
@@ -165,13 +173,13 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> with Single
       ),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 20.0, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6),
           child: Column(
             children: [
-              // Wake Word Active Indicator Banner
+              // Wake Word Active Banner
               if (_isWakeWordActive)
                 Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.only(bottom: 6),
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
                     decoration: BoxDecoration(
@@ -195,93 +203,117 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> with Single
 
               // Animated Glowing Voice Orb
               Expanded(
-                flex: 2,
+                flex: 3,
                 child: Center(
-                  child: GestureDetector(
-                    onTap: _toggleSpeechListening,
-                    child: ScaleTransition(
-                      scale: Tween<double>(
-                        begin: _isListening ? 0.95 : 0.85,
-                        end: _isListening ? 1.25 : 1.05,
-                      ).animate(CurvedAnimation(parent: _orbController, curve: Curves.easeInOut)),
-                      child: Container(
-                        width: 140,
-                        height: 140,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: RadialGradient(
-                            colors: _isListening
-                                ? [Colors.redAccent, colorScheme.primary]
-                                : _isSpeaking
-                                    ? [Colors.cyanAccent, colorScheme.primary]
-                                    : (_isWakeWordActive
-                                        ? [Colors.green, colorScheme.primary]
-                                        : [colorScheme.primary, colorScheme.secondary]),
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: (_isListening
-                                      ? Colors.redAccent
-                                      : (_isWakeWordActive ? Colors.green : colorScheme.primary))
-                                  .withValues(alpha: 0.4),
-                              blurRadius: _isListening ? 40 : 25,
-                              spreadRadius: _isListening ? 12 : 5,
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      GestureDetector(
+                        onTap: _toggleSpeechListening,
+                        child: ScaleTransition(
+                          scale: Tween<double>(
+                            begin: _isListening ? 0.95 : 0.88,
+                            end: _isListening ? 1.25 : 1.05,
+                          ).animate(CurvedAnimation(parent: _orbController, curve: Curves.easeInOut)),
+                          child: Container(
+                            width: 120,
+                            height: 120,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              gradient: RadialGradient(
+                                colors: _isListening
+                                    ? [Colors.redAccent, colorScheme.primary]
+                                    : _isSpeaking
+                                        ? [Colors.cyanAccent, colorScheme.primary]
+                                        : (_isWakeWordActive
+                                            ? [Colors.green, colorScheme.primary]
+                                            : [colorScheme.primary, colorScheme.secondary]),
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: (_isListening
+                                          ? Colors.redAccent
+                                          : (_isWakeWordActive ? Colors.green : colorScheme.primary))
+                                      .withValues(alpha: 0.4),
+                                  blurRadius: _isListening ? 36 : 22,
+                                  spreadRadius: _isListening ? 10 : 4,
+                                ),
+                              ],
                             ),
-                          ],
-                        ),
-                        child: Icon(
-                          _isListening
-                              ? Icons.mic_rounded
-                              : _isSpeaking
-                                  ? Icons.graphic_eq_rounded
-                                  : (_isWakeWordActive ? Icons.hearing_rounded : Icons.auto_awesome_rounded),
-                          size: 64,
-                          color: Colors.white,
+                            child: Icon(
+                              _isListening
+                                  ? Icons.mic_rounded
+                                  : _isSpeaking
+                                      ? Icons.graphic_eq_rounded
+                                      : (_isWakeWordActive ? Icons.hearing_rounded : Icons.auto_awesome_rounded),
+                              size: 54,
+                              color: Colors.white,
+                            ),
+                          ),
                         ),
                       ),
-                    ),
+                      const SizedBox(height: 10),
+                      Text(
+                        _isListening
+                            ? 'Listening... Speak your request now'
+                            : _isSpeaking
+                                ? 'Speaking response out loud...'
+                                : (_isWakeWordActive
+                                    ? 'Wake-word active: say "Hey Maid..." or tap orb'
+                                    : 'Tap orb or speak "Hey Maid"'),
+                        style: theme.textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: _isListening
+                              ? Colors.redAccent
+                              : (_isWakeWordActive ? Colors.green : colorScheme.primary),
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
 
-              Text(
-                _isListening
-                    ? 'Listening... Speak your question now'
-                    : _isSpeaking
-                        ? 'Speaking response out loud...'
-                        : (_isWakeWordActive
-                            ? 'Wake-word active: say "Hey Maid..." or tap orb'
-                            : 'Tap the orb or speak "Hey Maid"'),
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: _isListening
-                      ? Colors.redAccent
-                      : (_isWakeWordActive ? Colors.green : colorScheme.primary),
+              // PROMINENT "TELL MY WORK & TODAY'S TASKS" TRIGGER BUTTON
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 8),
+                child: ElevatedButton.icon(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF4F46E5),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 18),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+                    elevation: 3,
+                  ),
+                  onPressed: () => _executeAssistantQuery("tell my work and today's tasks"),
+                  icon: const Icon(Icons.record_voice_over_rounded, size: 20),
+                  label: const Text(
+                    "Tell My Work & Today's Tasks (TTS)",
+                    style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, letterSpacing: 0.3),
+                  ),
                 ),
               ),
 
-              const SizedBox(height: 12),
-
-              // Answer Card & Spoken Result Display
+              // Spoken Result Display & Quick Tasks Card
               Expanded(
-                flex: 3,
+                flex: 4,
                 child: SingleChildScrollView(
                   child: Column(
                     children: [
                       if (_recognizedText.isNotEmpty)
                         Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
+                          padding: const EdgeInsets.only(bottom: 8),
                           child: GlassContainer(
-                            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                            borderRadius: 16,
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                            borderRadius: 14,
                             child: Row(
                               children: [
-                                Icon(Icons.record_voice_over_rounded, size: 18, color: colorScheme.primary),
+                                Icon(Icons.mic_rounded, size: 16, color: colorScheme.primary),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Text(
                                     '"$_recognizedText"',
-                                    style: theme.textTheme.bodyMedium?.copyWith(fontStyle: FontStyle.italic),
+                                    style: theme.textTheme.bodySmall?.copyWith(fontStyle: FontStyle.italic),
                                   ),
                                 ),
                               ],
@@ -291,7 +323,7 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> with Single
 
                       if (_lastResult != null)
                         GlassCard(
-                          padding: const EdgeInsets.all(18),
+                          padding: const EdgeInsets.all(16),
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -300,18 +332,26 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> with Single
                                   Icon(
                                     _getIntentIcon(_lastResult!.intentType),
                                     color: colorScheme.primary,
+                                    size: 20,
                                   ),
                                   const SizedBox(width: 8),
                                   GlassPillBadge(
-                                    label: 'OFFLINE ASSISTANT RESPONSE',
+                                    label: 'ASSISTANT SPOKEN ANSWER',
                                     color: colorScheme.primary,
+                                  ),
+                                  const Spacer(),
+                                  IconButton(
+                                    visualDensity: VisualDensity.compact,
+                                    icon: const Icon(Icons.replay_rounded, size: 18),
+                                    tooltip: 'Speak Again',
+                                    onPressed: () => _ttsService.speak(_lastResult!.spokenText),
                                   ),
                                 ],
                               ),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 10),
                               Text(
                                 _lastResult!.displayText,
-                                style: theme.textTheme.bodyLarge?.copyWith(
+                                style: theme.textTheme.bodyMedium?.copyWith(
                                   height: 1.4,
                                   fontWeight: FontWeight.w500,
                                 ),
@@ -319,56 +359,171 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> with Single
                             ],
                           ),
                         ),
+
+                      const SizedBox(height: 8),
+
+                      // Quick Today's To-Do Preview Box
+                      GlassCard(
+                        padding: const EdgeInsets.all(14),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const Icon(Icons.checklist_rounded, color: Color(0xFF6366F1), size: 18),
+                                const SizedBox(width: 6),
+                                Text(
+                                  "Today's Quick To-Do List (${pendingToday.length} left)",
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                ),
+                                const Spacer(),
+                                TextButton(
+                                  style: TextButton.styleFrom(visualDensity: VisualDensity.compact, padding: EdgeInsets.zero),
+                                  onPressed: () => _executeAssistantQuery("what are today's tasks"),
+                                  child: const Text('Ask Assistant', style: TextStyle(fontSize: 11)),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 6),
+                            if (pendingToday.isEmpty)
+                              const Padding(
+                                padding: EdgeInsets.symmetric(vertical: 4),
+                                child: Text('✨ No pending tasks for today! Great job.', style: TextStyle(fontSize: 12, color: Colors.grey)),
+                              )
+                            else
+                              ...pendingToday.take(3).map((task) {
+                                return Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 2),
+                                  child: Row(
+                                    children: [
+                                      SizedBox(
+                                        height: 24,
+                                        width: 24,
+                                        child: Checkbox(
+                                          value: task.status == 'completed',
+                                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                          onChanged: (_) => provider.toggleTaskStatus(task),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          task.title,
+                                          style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }),
+
+                            const SizedBox(height: 6),
+                            // Quick Add Line
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: TextField(
+                                    controller: _quickTaskCtrl,
+                                    style: const TextStyle(fontSize: 12),
+                                    decoration: InputDecoration(
+                                      hintText: 'Quick add a task for today...',
+                                      hintStyle: const TextStyle(fontSize: 12),
+                                      isDense: true,
+                                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                                    ),
+                                    onSubmitted: (val) {
+                                      if (val.trim().isNotEmpty) {
+                                        provider.addTask(TaskItem(
+                                          id: DateTime.now().millisecondsSinceEpoch.toString(),
+                                          title: val.trim(),
+                                          dueDate: provider.selectedDateStr,
+                                          priority: 2,
+                                        ));
+                                        _quickTaskCtrl.clear();
+                                      }
+                                    },
+                                  ),
+                                ),
+                                const SizedBox(width: 6),
+                                IconButton.filledTonal(
+                                  visualDensity: VisualDensity.compact,
+                                  icon: const Icon(Icons.add, size: 16),
+                                  onPressed: () {
+                                    final val = _quickTaskCtrl.text.trim();
+                                    if (val.isNotEmpty) {
+                                      provider.addTask(TaskItem(
+                                        id: DateTime.now().millisecondsSinceEpoch.toString(),
+                                        title: val,
+                                        dueDate: provider.selectedDateStr,
+                                        priority: 2,
+                                      ));
+                                      _quickTaskCtrl.clear();
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
               ),
 
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
 
-              // Quick Preset Chips
+              // Quick Action Chips
               SingleChildScrollView(
                 scrollDirection: Axis.horizontal,
                 child: Row(
                   children: [
                     ActionChip(
-                      avatar: const Icon(Icons.schedule_send_rounded, size: 16, color: Colors.indigo),
-                      label: const Text("Reschedule Any"),
-                      onPressed: () => UniversalRescheduleDialog.showUniversalPicker(context),
+                      avatar: const Icon(Icons.record_voice_over_rounded, size: 16, color: Colors.indigo),
+                      label: const Text("Tell My Work"),
+                      onPressed: () => _executeAssistantQuery("tell my work and today's tasks"),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
+                    ActionChip(
+                      avatar: const Icon(Icons.task_alt_rounded, size: 16, color: Colors.green),
+                      label: const Text("What's Today's Task?"),
+                      onPressed: () => _executeAssistantQuery("what is today task"),
+                    ),
+                    const SizedBox(width: 6),
+                    ActionChip(
+                      avatar: const Icon(Icons.alarm_rounded, size: 16, color: Colors.orange),
+                      label: const Text("Check Alarms"),
+                      onPressed: () => _executeAssistantQuery("what alarms are set"),
+                    ),
+                    const SizedBox(width: 6),
                     ActionChip(
                       avatar: const Icon(Icons.calendar_month_rounded, size: 16),
                       label: const Text("Today's Schedule"),
                       onPressed: () => _executeAssistantQuery("what is today schedule"),
                     ),
-                    const SizedBox(width: 8),
+                    const SizedBox(width: 6),
                     ActionChip(
-                      avatar: const Icon(Icons.task_alt_rounded, size: 16),
-                      label: const Text("My Tasks"),
-                      onPressed: () => _executeAssistantQuery("what are my tasks"),
-                    ),
-                    const SizedBox(width: 8),
-                    ActionChip(
-                      avatar: const Icon(Icons.alarm_rounded, size: 16),
-                      label: const Text("Check Alarms"),
-                      onPressed: () => _executeAssistantQuery("what alarms are set"),
-                    ),
-                    const SizedBox(width: 8),
-                    ActionChip(
-                      avatar: const Icon(Icons.bolt_rounded, size: 16),
+                      avatar: const Icon(Icons.bolt_rounded, size: 16, color: Colors.amber),
                       label: const Text("Habit Streaks"),
                       onPressed: () => _executeAssistantQuery("show habit streaks"),
+                    ),
+                    const SizedBox(width: 6),
+                    ActionChip(
+                      avatar: const Icon(Icons.schedule_send_rounded, size: 16, color: Colors.purple),
+                      label: const Text("Reschedule Any"),
+                      onPressed: () => UniversalRescheduleDialog.showUniversalPicker(context),
                     ),
                   ],
                 ),
               ),
 
-              const SizedBox(height: 10),
+              const SizedBox(height: 8),
 
-              // Frosted Glass Text Input Box
+              // Text Input Box
               GlassContainer(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                 borderRadius: 20,
                 child: Row(
                   children: [
@@ -376,13 +531,20 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> with Single
                       child: TextField(
                         controller: _textInputCtrl,
                         decoration: const InputDecoration(
-                          hintText: 'Type your offline query...',
+                          hintText: 'Ask "what\'s today\'s task", "tell my work"...',
                           hintStyle: TextStyle(fontSize: 13),
                           border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                          contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                         ),
                         onSubmitted: (text) => _executeAssistantQuery(text),
                       ),
+                    ),
+                    IconButton(
+                      icon: Icon(
+                        _isListening ? Icons.mic_rounded : Icons.mic_none_rounded,
+                        color: _isListening ? Colors.redAccent : colorScheme.primary,
+                      ),
+                      onPressed: _toggleSpeechListening,
                     ),
                     IconButton.filled(
                       onPressed: () => _executeAssistantQuery(_textInputCtrl.text),
@@ -400,6 +562,8 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> with Single
 
   IconData _getIntentIcon(String intent) {
     switch (intent) {
+      case 'today_work':
+        return Icons.auto_awesome_rounded;
       case 'schedule':
         return Icons.calendar_month_rounded;
       case 'tasks':
@@ -411,7 +575,7 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> with Single
       case 'notes':
         return Icons.search_rounded;
       default:
-        return Icons.auto_awesome_rounded;
+        return Icons.chat_bubble_outline_rounded;
     }
   }
 }

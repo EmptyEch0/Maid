@@ -4,6 +4,8 @@ import 'package:maid/engine/scheduling_engine.dart';
 import 'package:maid/engine/nlp_parser_engine.dart';
 import 'package:maid/engine/weekly_review_engine.dart';
 import 'package:maid/engine/dsa_plan_seeder.dart';
+import 'package:maid/engine/local_query_engine.dart';
+import 'package:maid/providers/app_provider.dart';
 
 void main() {
   group('1. Universal Rescheduling & Scheduling Engine Tests', () {
@@ -223,6 +225,25 @@ void main() {
       expect(rescheduled.date, '2026-08-18');
       expect(rescheduled.startTime, '14:00');
       expect(rescheduled.endTime, '15:00');
+    });
+  });
+
+  group('6. Local Query Engine Voice & Work Query Tests', () {
+    test('Identifies "what is today task" and "tell my work" intent accurately', () {
+      final appProvider = AppProvider();
+      final q1 = LocalQueryEngine.processQuery("what is today task", appProvider);
+      expect(q1.intentType, 'today_work');
+      expect(q1.spokenText.isNotEmpty, true);
+
+      final q2 = LocalQueryEngine.processQuery("tell my work and today tasks", appProvider);
+      expect(q2.intentType, 'today_work');
+      expect(q2.spokenText.isNotEmpty, true);
+
+      final q3 = LocalQueryEngine.processQuery("where is my work", appProvider);
+      expect(q3.intentType, 'today_work');
+
+      final q4 = LocalQueryEngine.processQuery("what alarms are set", appProvider);
+      expect(q4.intentType, 'alarms');
     });
   });
 }
