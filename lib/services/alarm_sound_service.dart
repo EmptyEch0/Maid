@@ -2,92 +2,99 @@ import 'dart:async';
 import 'package:just_audio/just_audio.dart';
 import 'package:flutter/services.dart';
 
-/// Service that handles alarm sound playback using just_audio.
-/// Supports playing system-style alarm alerts and custom audio files from device storage.
+/// Service that handles alarm sound playback using just_audio and system sounds.
+/// Supports playing custom audio files from device storage and varied tone rhythm patterns.
 class AlarmSoundService {
   static final AlarmSoundService instance = AlarmSoundService._init();
   AlarmSoundService._init();
 
   AudioPlayer? _alarmPlayer;
   Timer? _fallbackTimer;
+  String? _currentPlayingTone;
+
+  String? get currentPlayingTone => _currentPlayingTone;
 
   /// Play an alarm sound. If [filePath] is provided, plays that local file.
-  /// Otherwise plays a system-style alert tone using platform defaults.
-  Future<void> playAlarmSound({String? filePath, bool loop = true}) async {
+  /// Otherwise plays a distinct rhythm/tone alert pattern.
+  Future<void> playAlarmSound({String? filePath, String toneName = 'Gentle Chime', bool loop = true}) async {
     await stopAlarmSound(); // Stop any existing playback
+    _currentPlayingTone = toneName;
 
     try {
-      _alarmPlayer = AudioPlayer();
-
       if (filePath != null && filePath.isNotEmpty) {
-        // Play custom audio file from device
+        _alarmPlayer = AudioPlayer();
         await _alarmPlayer!.setFilePath(filePath);
-      } else {
-        // Play built-in asset tone or use system sound fallback
-        // Use a looping system click + haptic as a fallback alarm
-        _playSystemAlarmFallback(loop: loop);
+        if (loop) {
+          await _alarmPlayer!.setLoopMode(LoopMode.one);
+        }
+        await _alarmPlayer!.setVolume(1.0);
+        await _alarmPlayer!.play();
         return;
       }
 
-      if (loop) {
-        await _alarmPlayer!.setLoopMode(LoopMode.one);
-      }
-
-      await _alarmPlayer!.setVolume(1.0);
-      await _alarmPlayer!.play();
+      // If preset tone without custom file path:
+      _playPresetTonePattern(toneName: toneName, loop: loop, durationSeconds: 60);
     } catch (e) {
-      // Fallback to system sound if audio playback fails
-      _playSystemAlarmFallback(loop: loop);
+      _playPresetTonePattern(toneName: toneName, loop: loop, durationSeconds: 60);
     }
   }
 
-  /// Play a preview of a tone (non-looping, short duration)
-  Future<void> playPreview({String? filePath}) async {
+  /// Play a preview of a tone (non-looping, short duration ~4 seconds)
+  Future<void> playPreview({String? filePath, String toneName = 'Gentle Chime'}) async {
     await stopAlarmSound();
+    _currentPlayingTone = toneName;
 
     try {
-      _alarmPlayer = AudioPlayer();
-
       if (filePath != null && filePath.isNotEmpty) {
+        _alarmPlayer = AudioPlayer();
         await _alarmPlayer!.setFilePath(filePath);
         await _alarmPlayer!.setLoopMode(LoopMode.off);
         await _alarmPlayer!.setVolume(1.0);
         await _alarmPlayer!.play();
 
-        // Auto-stop preview after 5 seconds
         _fallbackTimer?.cancel();
-        _fallbackTimer = Timer(const Duration(seconds: 5), () {
+        _fallbackTimer = Timer(const Duration(seconds: 4), () {
           stopAlarmSound();
         });
-      } else {
-        // Preview system sound
-        _playSystemAlarmFallback(loop: false, durationSeconds: 3);
+        return;
       }
+
+      _playPresetTonePattern(toneName: toneName, loop: false, durationSeconds: 4);
     } catch (_) {
-      _playSystemAlarmFallback(loop: false, durationSeconds: 3);
+      _playPresetTonePattern(toneName: toneName, loop: false, durationSeconds: 4);
     }
   }
 
-  /// Fallback alarm using system sounds and haptics when no custom audio is available.
-  /// Creates a repeating pattern of system clicks + vibrations to simulate an alarm.
-  void _playSystemAlarmFallback({bool loop = true, int durationSeconds = 60}) {
+  /// Plays distinctive rhythmic sound and vibration patterns based on tone name
+  void _playPresetTonePattern({required String toneName, bool loop = true, int durationSeconds = 60}) {
     _fallbackTimer?.cancel();
 
+    int intervalMs = 600;
+    if (toneName.contains('Energetic') || toneName.contains('Radar') || toneName.contains('Siren')) {
+      intervalMs = 350;
+    } else if (toneName.contains('Zen') || toneName.contains('Morning')) {
+      intervalMs = 900;
+    } else if (toneName.contains('Digital') || toneName.contains('Beep')) {
+      intervalMs = 450;
+    }
+
     int elapsed = 0;
-    _fallbackTimer = Timer.periodic(const Duration(milliseconds: 600), (timer) {
+    _fallbackTimer = Timer.periodic(Duration(milliseconds: intervalMs), (timer) {
       elapsed++;
       try {
         SystemSound.play(SystemSoundType.alert);
         HapticFeedback.heavyImpact();
 
-        // Double vibration pattern for urgency
-        Future.delayed(const Duration(milliseconds: 200), () {
-          HapticFeedback.vibrate();
-        });
+        if (intervalMs < 500) {
+          Future.delayed(const Duration(milliseconds: 150), () {
+            HapticFeedback.vibrate();
+          });
+        }
       } catch (_) {}
 
-      if (!loop || elapsed > (durationSeconds * 1000 ~/ 600)) {
+      if (!loop || elapsed > (durationSeconds * 1000 ~/ intervalMs)) {
         timer.cancel();
+        _currentPlayingTone = null;
       }
     });
   }
@@ -96,6 +103,7 @@ class AlarmSoundService {
   Future<void> stopAlarmSound() async {
     _fallbackTimer?.cancel();
     _fallbackTimer = null;
+    _currentPlayingTone = null;
 
     try {
       if (_alarmPlayer != null) {

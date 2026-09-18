@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/app_models.dart';
 import '../../providers/app_provider.dart';
 import '../../services/alarm_sound_service.dart';
+import '../../services/tts_service.dart';
 
 class AlarmRingingDialog extends StatefulWidget {
   final AlarmItem alarm;
@@ -25,162 +26,238 @@ class AlarmRingingDialog extends StatefulWidget {
   State<AlarmRingingDialog> createState() => _AlarmRingingDialogState();
 }
 
-class _AlarmRingingDialogState extends State<AlarmRingingDialog> with SingleTickerProviderStateMixin {
+class _AlarmRingingDialogState extends State<AlarmRingingDialog> with TickerProviderStateMixin {
   late AnimationController _pulseController;
+  late AnimationController _rippleController;
 
   @override
   void initState() {
     super.initState();
     _pulseController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1000),
+      duration: const Duration(milliseconds: 900),
     )..repeat(reverse: true);
 
-    // Play actual alarm sound using the alarm's tone file path
+    _rippleController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1800),
+    )..repeat();
+
+    // Play actual alarm sound
     final provider = Provider.of<AppProvider>(context, listen: false);
     final filePath = provider.getToneFilePath(widget.alarm.soundRingtone);
-    AlarmSoundService.instance.playAlarmSound(filePath: filePath, loop: true);
+    AlarmSoundService.instance.playAlarmSound(
+      filePath: filePath,
+      toneName: widget.alarm.soundRingtone,
+      loop: true,
+    );
+
+    // Speak announcement once
+    final workName = widget.alarm.title.isNotEmpty ? widget.alarm.title : 'Alarm';
+    TtsService.instance.speak('Wake up! You have an alarm for $workName.');
   }
 
   @override
   void dispose() {
     _pulseController.dispose();
-    // Stop alarm sound when dialog is disposed
+    _rippleController.dispose();
     AlarmSoundService.instance.stopAlarmSound();
+    TtsService.instance.stop();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
+    final workTitle = widget.alarm.title.isNotEmpty ? widget.alarm.title : 'Wake Up Alarm';
 
     return Dialog.fullscreen(
-      backgroundColor: colorScheme.surface,
+      backgroundColor: const Color(0xFF0B0F19), // Deep immersive dark background
       child: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.all(24.0),
+          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 20.0),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Header indicator
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Icon(Icons.alarm_on_rounded, color: colorScheme.primary, size: 28),
-                  const SizedBox(width: 8),
-                  Text(
-                    'WAKE UP ALARM',
-                    style: theme.textTheme.titleMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 1.5,
-                      color: colorScheme.primary,
-                    ),
-                  ),
-                ],
-              ),
-
-              // Animated Pulsing Clock Icon & Time Display
+              // Top Incoming Call / Alarm Banner
               Column(
                 children: [
-                  ScaleTransition(
-                    scale: Tween<double>(begin: 0.9, end: 1.15).animate(
-                      CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
-                    ),
-                    child: Container(
-                      padding: const EdgeInsets.all(32),
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: colorScheme.primaryContainer.withValues(alpha: 0.4),
-                        boxShadow: [
-                          BoxShadow(
-                            color: colorScheme.primary.withValues(alpha: 0.3),
-                            blurRadius: 30,
-                            spreadRadius: 10,
-                          ),
-                        ],
-                      ),
-                      child: Icon(
-                        Icons.alarm_rounded,
-                        size: 80,
-                        color: colorScheme.primary,
-                      ),
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-
-                  // Digital Time
-                  Text(
-                    widget.alarm.time,
-                    style: theme.textTheme.displayLarge?.copyWith(
-                      fontWeight: FontWeight.w900,
-                      fontSize: 64,
-                      color: colorScheme.onSurface,
-                    ),
-                  ),
-
-                  const SizedBox(height: 12),
-
-                  // Title
-                  Text(
-                    widget.alarm.title.isNotEmpty ? widget.alarm.title : 'Alarm',
-                    style: theme.textTheme.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: colorScheme.onSurface,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
-
-                  const SizedBox(height: 24),
-
-                  // Unique Description Highlight Card
                   Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.all(20),
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                     decoration: BoxDecoration(
-                      color: colorScheme.secondaryContainer.withValues(alpha: 0.7),
+                      color: const Color(0xFF6366F1).withValues(alpha: 0.2),
                       borderRadius: BorderRadius.circular(20),
-                      border: Border.all(
-                        color: colorScheme.primary.withValues(alpha: 0.3),
-                        width: 1.5,
-                      ),
+                      border: Border.all(color: const Color(0xFF818CF8).withValues(alpha: 0.4)),
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
                       children: [
-                        Row(
-                          children: [
-                            Icon(Icons.notes_rounded, size: 20, color: colorScheme.onSecondaryContainer),
-                            const SizedBox(width: 8),
-                            Text(
-                              'ALARM NOTE & DESCRIPTION',
-                              style: theme.textTheme.labelMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 1.2,
-                                color: colorScheme.onSecondaryContainer.withValues(alpha: 0.8),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 10),
+                        Icon(Icons.alarm_on_rounded, color: Color(0xFF818CF8), size: 20),
+                        SizedBox(width: 8),
                         Text(
-                          widget.alarm.description.isNotEmpty
-                              ? widget.alarm.description
-                              : 'No description added for this alarm.',
-                          style: theme.textTheme.bodyLarge?.copyWith(
-                            fontWeight: FontWeight.w500,
-                            fontSize: 18,
-                            height: 1.4,
-                            color: colorScheme.onSecondaryContainer,
+                          '⏰ INCOMING WAKE-UP ALARM',
+                          style: TextStyle(
+                            color: Color(0xFFC7D2FE),
+                            fontWeight: FontWeight.bold,
+                            letterSpacing: 1.2,
+                            fontSize: 12,
                           ),
                         ),
                       ],
                     ),
                   ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Maid Assistant Alarm',
+                    style: TextStyle(
+                      color: Colors.white.withValues(alpha: 0.6),
+                      fontSize: 14,
+                    ),
+                  ),
                 ],
               ),
 
-              // Action Buttons: Snooze & Dismiss
+              // Center Visual: Animated Rippling Rings, Time & Work Name
+              Column(
+                children: [
+                  // Animated Rippling Rings Icon
+                  Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // Outer animated ripple ring
+                      AnimatedBuilder(
+                        animation: _rippleController,
+                        builder: (context, child) {
+                          return Container(
+                            width: 140 + (_rippleController.value * 60),
+                            height: 140 + (_rippleController.value * 60),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: const Color(0xFF6366F1).withValues(alpha: 1.0 - _rippleController.value),
+                                width: 2,
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                      // Inner Pulsing Core
+                      ScaleTransition(
+                        scale: Tween<double>(begin: 0.92, end: 1.12).animate(
+                          CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
+                        ),
+                        child: Container(
+                          padding: const EdgeInsets.all(28),
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFF6366F1), Color(0xFF4338CA)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF6366F1).withValues(alpha: 0.5),
+                                blurRadius: 36,
+                                spreadRadius: 10,
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.alarm_rounded,
+                            size: 64,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 28),
+
+                  // Digital Time Display
+                  Text(
+                    widget.alarm.time,
+                    style: const TextStyle(
+                      fontSize: 60,
+                      fontWeight: FontWeight.w900,
+                      color: Colors.white,
+                      letterSpacing: -1.0,
+                    ),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  // Prominent Work / Task Name
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.08),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+                    ),
+                    child: Text(
+                      workTitle,
+                      style: const TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.w800,
+                        color: Colors.white,
+                        letterSpacing: -0.3,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Tone Indicator Badge
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.music_note_rounded, size: 16, color: Color(0xFF38BDF8)),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Ringtone: ${widget.alarm.soundRingtone}',
+                        style: const TextStyle(
+                          color: Color(0xFF38BDF8),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  if (widget.alarm.description.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    // Work Description Card
+                    Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E293B).withValues(alpha: 0.8),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: const Color(0xFF334155)),
+                      ),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.assignment_rounded, color: Color(0xFF818CF8), size: 22),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              widget.alarm.description,
+                              style: const TextStyle(
+                                color: Color(0xFFE2E8F0),
+                                fontSize: 15,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+
+              // Bottom Action Buttons: Snooze & Dismiss
               Column(
                 children: [
                   Row(
@@ -189,17 +266,20 @@ class _AlarmRingingDialogState extends State<AlarmRingingDialog> with SingleTick
                       Expanded(
                         child: OutlinedButton.icon(
                           style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.white,
+                            side: BorderSide(color: Colors.white.withValues(alpha: 0.3)),
                             padding: const EdgeInsets.symmetric(vertical: 18),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
+                              borderRadius: BorderRadius.circular(18),
                             ),
                           ),
                           onPressed: () {
                             AlarmSoundService.instance.stopAlarmSound();
+                            TtsService.instance.stop();
                             Provider.of<AppProvider>(context, listen: false).snoozeAlarm(widget.alarm);
                             Navigator.of(context).pop();
                           },
-                          icon: const Icon(Icons.snooze_rounded),
+                          icon: const Icon(Icons.snooze_rounded, color: Color(0xFFFBBF24)),
                           label: Text(
                             'Snooze (${widget.alarm.snoozeDurationMinutes}m)',
                             style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
@@ -212,22 +292,24 @@ class _AlarmRingingDialogState extends State<AlarmRingingDialog> with SingleTick
                       Expanded(
                         child: ElevatedButton.icon(
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: colorScheme.primary,
-                            foregroundColor: colorScheme.onPrimary,
+                            backgroundColor: const Color(0xFF10B981),
+                            foregroundColor: Colors.white,
                             padding: const EdgeInsets.symmetric(vertical: 18),
                             shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(16),
+                              borderRadius: BorderRadius.circular(18),
                             ),
-                            elevation: 4,
+                            elevation: 6,
+                            shadowColor: const Color(0xFF10B981).withValues(alpha: 0.5),
                           ),
                           onPressed: () {
                             AlarmSoundService.instance.stopAlarmSound();
+                            TtsService.instance.stop();
                             Provider.of<AppProvider>(context, listen: false).dismissAlarm(widget.alarm);
                             Navigator.of(context).pop();
                           },
-                          icon: const Icon(Icons.check_circle_rounded),
+                          icon: const Icon(Icons.check_circle_rounded, size: 22),
                           label: const Text(
-                            'Wake Up!',
+                            'Dismiss / Wake',
                             style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                           ),
                         ),
@@ -243,4 +325,3 @@ class _AlarmRingingDialogState extends State<AlarmRingingDialog> with SingleTick
     );
   }
 }
-

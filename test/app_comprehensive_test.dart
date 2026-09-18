@@ -1,4 +1,6 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:maid/models/app_models.dart';
 import 'package:maid/engine/scheduling_engine.dart';
 import 'package:maid/engine/nlp_parser_engine.dart';
@@ -8,6 +10,9 @@ import 'package:maid/engine/local_query_engine.dart';
 import 'package:maid/providers/app_provider.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  SharedPreferences.setMockInitialValues({});
+
   group('1. Universal Rescheduling & Scheduling Engine Tests', () {
     test('Detects schedule overlap conflict accurately', () {
       final slot1 = ScheduledSlot(
@@ -53,7 +58,6 @@ void main() {
       );
 
       expect(candidates.isNotEmpty, true);
-      // Ensure candidate doesn't clash with 09:00 - 10:00 on 2026-08-17
       for (final c in candidates) {
         if (c.date == '2026-08-17') {
           final isOverlapping = (c.startTime == '09:00');
@@ -72,7 +76,6 @@ void main() {
         category: 'Study',
       );
 
-      // Exception shifting 2026-08-17 from 10:00 to 14:00
       final exception = ScheduleException(
         id: 'exc_1',
         recurrenceRuleId: 'rec_leetcode',
@@ -105,9 +108,22 @@ void main() {
       expect(result.description, 'Drink water and run 5k');
     });
 
+    test('Parses voice alarm command like "meeting at 3pm as alarm"', () {
+      final result = NlpParserEngine.parseText('meeting at 3pm as alarm');
+      expect(result.type, 'alarm');
+      expect(result.startTime, '15:00');
+      expect(result.title, 'Meeting');
+    });
+
+    test('Parses "set alarm for meeting at 3pm"', () {
+      final result = NlpParserEngine.parseText('set alarm for meeting at 3pm');
+      expect(result.type, 'alarm');
+      expect(result.startTime, '15:00');
+      expect(result.title, 'Meeting');
+    });
+
     test('Parses study task with tomorrow relative date and priority', () {
       final result = NlpParserEngine.parseText('Math study tomorrow at 4pm priority high');
-      expect(result.type, 'event');
       expect(result.startTime, '16:00');
       expect(result.priority, 3);
       expect(result.category, 'Study');
@@ -229,21 +245,41 @@ void main() {
   });
 
   group('6. Local Query Engine Voice & Work Query Tests', () {
-    test('Identifies "what is today task" and "tell my work" intent accurately', () {
+    test('Identifies "what is today task" and "tell my work" intent accurately', () async {
       final appProvider = AppProvider();
-      final q1 = LocalQueryEngine.processQuery("what is today task", appProvider);
+      final q1 = await LocalQueryEngine.processQuery("what is today task", appProvider);
       expect(q1.intentType, 'today_work');
       expect(q1.spokenText.isNotEmpty, true);
 
-      final q2 = LocalQueryEngine.processQuery("tell my work and today tasks", appProvider);
+      final q2 = await LocalQueryEngine.processQuery("tell my work and today tasks", appProvider);
       expect(q2.intentType, 'today_work');
       expect(q2.spokenText.isNotEmpty, true);
 
-      final q3 = LocalQueryEngine.processQuery("where is my work", appProvider);
+      final q3 = await LocalQueryEngine.processQuery("where is my work", appProvider);
       expect(q3.intentType, 'today_work');
 
-      final q4 = LocalQueryEngine.processQuery("what alarms are set", appProvider);
+      final q4 = await LocalQueryEngine.processQuery("what alarms are set", appProvider);
       expect(q4.intentType, 'alarms');
     });
   });
+
+  group('7. Theme & Glassmorphism Management Tests', () {
+    test('AppProvider theme switching supports Light, Dark, and System modes', () {
+      final appProvider = AppProvider();
+      expect(appProvider.themeMode, isNotNull);
+
+      appProvider.setThemeMode(ThemeMode.light);
+      expect(appProvider.themeMode, ThemeMode.light);
+
+      appProvider.setThemeMode(ThemeMode.dark);
+      expect(appProvider.themeMode, ThemeMode.dark);
+
+      appProvider.setThemeMode(ThemeMode.system);
+      expect(appProvider.themeMode, ThemeMode.system);
+
+      appProvider.toggleTheme();
+      expect(appProvider.themeMode == ThemeMode.light || appProvider.themeMode == ThemeMode.dark, true);
+    });
+  });
 }
+

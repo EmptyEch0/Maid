@@ -5,6 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_models.dart';
 import '../services/database_helper.dart';
 import '../services/notification_service.dart';
+import '../services/widget_update_service.dart';
 import '../engine/scheduling_engine.dart';
 import '../engine/weekly_review_engine.dart';
 import '../engine/nlp_parser_engine.dart';
@@ -32,8 +33,23 @@ class AppProvider extends ChangeNotifier {
   List<AlarmItem> _alarms = [];
   List<HabitItem> _habits = [];
 
-  List<String> _customAlarmTones = ['Gentle Chime', 'Energetic Pulse', 'Radar Alarm', 'Classic Bell', 'Morning Birds', 'Digital Beep'];
-  List<String> _customReminderTones = ['Default Chime', 'Soft Bell', 'Double Click', 'Ping Alert', 'Zen Gong'];
+  List<String> _customAlarmTones = [
+    'Gentle Chime',
+    'Energetic Pulse',
+    'Radar Alarm',
+    'Classic Bell',
+    'Morning Birds',
+    'Digital Beep',
+    'Zen Gong',
+    'Vibrant Siren'
+  ];
+  List<String> _customReminderTones = [
+    'Default Chime',
+    'Soft Bell',
+    'Double Click',
+    'Ping Alert',
+    'Zen Gong'
+  ];
   String _defaultAlarmTone = 'Gentle Chime';
   String _defaultReminderTone = 'Default Chime';
 
@@ -68,8 +84,17 @@ class AppProvider extends ChangeNotifier {
 
   Future<void> init() async {
     final prefs = await SharedPreferences.getInstance();
-    final isDark = prefs.getBool('is_dark_mode') ?? true;
-    _themeMode = isDark ? ThemeMode.dark : ThemeMode.light;
+    final savedTheme = prefs.getString('theme_mode');
+    if (savedTheme == 'light') {
+      _themeMode = ThemeMode.light;
+    } else if (savedTheme == 'dark') {
+      _themeMode = ThemeMode.dark;
+    } else if (savedTheme == 'system') {
+      _themeMode = ThemeMode.system;
+    } else {
+      final isDark = prefs.getBool('is_dark_mode') ?? true;
+      _themeMode = isDark ? ThemeMode.dark : ThemeMode.light;
+    }
 
     _pinHash = prefs.getString('pin_hash');
     _isPinSet = _pinHash != null && _pinHash!.isNotEmpty;
@@ -100,9 +125,13 @@ class AppProvider extends ChangeNotifier {
     }
 
     await NotificationService.instance.init();
+    await WidgetUpdateService.instance.init();
     await PermissionService.instance.requestAllAppPermissions();
     await SpeechService.instance.init();
     await refreshData();
+
+    // Sync all alarms with exact Android Notification scheduler
+    await NotificationService.instance.syncAllAlarms(_alarms);
 
     AlarmService.instance.startMonitoring(() => _alarms);
   }
@@ -135,13 +164,39 @@ class AppProvider extends ChangeNotifier {
     _inboxItems = await db.getInboxItems();
     _alarms = await db.getAlarms();
     _habits = await db.getHabits();
+    _syncWidget();
     notifyListeners();
+  }
+
+  void _syncWidget() {
+    WidgetUpdateService.instance.updateTodoWidget(
+      tasks: _tasks,
+      events: _events,
+      recurrenceRules: _recurrenceRules,
+      exceptions: _exceptions,
+    );
   }
 
   void toggleTheme() async {
     _themeMode = _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
     final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('theme_mode', _themeMode == ThemeMode.dark ? 'dark' : 'light');
     await prefs.setBool('is_dark_mode', _themeMode == ThemeMode.dark);
+    notifyListeners();
+  }
+
+  void setThemeMode(ThemeMode mode) async {
+    _themeMode = mode;
+    final prefs = await SharedPreferences.getInstance();
+    if (mode == ThemeMode.light) {
+      await prefs.setString('theme_mode', 'light');
+      await prefs.setBool('is_dark_mode', false);
+    } else if (mode == ThemeMode.dark) {
+      await prefs.setString('theme_mode', 'dark');
+      await prefs.setBool('is_dark_mode', true);
+    } else {
+      await prefs.setString('theme_mode', 'system');
+    }
     notifyListeners();
   }
 
@@ -304,6 +359,7 @@ class AppProvider extends ChangeNotifier {
         isEnabled: true,
       );
       await DatabaseHelper.instance.insertAlarm(updated);
+      await NotificationService.instance.scheduleAlarmNotification(updated);
       await refreshData();
     }
   }
@@ -339,6 +395,15 @@ class AppProvider extends ChangeNotifier {
       await _saveToneFilePaths(prefs);
       notifyListeners();
     }
+  }
+
+  Future<void> removeCustomAlarmTone(String toneName) async {
+    _customAlarmTones.remove(toneName);
+    _toneFilePaths.remove(toneName);
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList('custom_alarm_tones', _customAlarmTones);
+    await _saveToneFilePaths(prefs);
+    notifyListeners();
   }
 
   Future<void> addCustomReminderTone(String toneName, {String? filePath}) async {
@@ -380,23 +445,30 @@ class AppProvider extends ChangeNotifier {
 
   void previewPlayTone(String toneName) {
     final filePath = getToneFilePath(toneName);
-    AlarmSoundService.instance.playPreview(filePath: filePath);
+    AlarmSoundService.instance.playPreview(filePath: filePath, toneName: toneName);
   }
 
   // --- ALARMS ---
   Future<void> addAlarm(AlarmItem alarm) async {
     await DatabaseHelper.instance.insertAlarm(alarm);
+    await NotificationService.instance.scheduleAlarmNotification(alarm);
     await refreshData();
   }
 
   Future<void> toggleAlarmStatus(AlarmItem alarm) async {
     final updated = alarm.copyWith(isEnabled: !alarm.isEnabled);
     await DatabaseHelper.instance.insertAlarm(updated);
+    if (updated.isEnabled) {
+      await NotificationService.instance.scheduleAlarmNotification(updated);
+    } else {
+      await NotificationService.instance.cancelAlarmNotification(updated.id);
+    }
     await refreshData();
   }
 
   Future<void> deleteAlarm(String id) async {
     await DatabaseHelper.instance.deleteAlarm(id);
+    await NotificationService.instance.cancelAlarmNotification(id);
     await refreshData();
   }
 
@@ -405,19 +477,29 @@ class AppProvider extends ChangeNotifier {
     final formattedHour = now.hour.toString().padLeft(2, '0');
     final formattedMinute = now.minute.toString().padLeft(2, '0');
     final newTime = '$formattedHour:$formattedMinute';
-    
+
     final updated = alarm.copyWith(
       time: newTime,
       isSnoozed: true,
       isEnabled: true,
     );
     await DatabaseHelper.instance.insertAlarm(updated);
+    await NotificationService.instance.scheduleAlarmNotification(updated);
     await refreshData();
   }
 
   Future<void> dismissAlarm(AlarmItem alarm) async {
     final updated = alarm.copyWith(isSnoozed: false);
     await DatabaseHelper.instance.insertAlarm(updated);
+    // If repeat days are set, calculate and schedule next cycle
+    if (alarm.repeatDays.isNotEmpty) {
+      await NotificationService.instance.scheduleAlarmNotification(updated);
+    } else {
+      // One-time alarm can be toggled off
+      final disabled = updated.copyWith(isEnabled: false);
+      await DatabaseHelper.instance.insertAlarm(disabled);
+      await NotificationService.instance.cancelAlarmNotification(disabled.id);
+    }
     await refreshData();
   }
 
@@ -460,8 +542,9 @@ class AppProvider extends ChangeNotifier {
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         title: parsed.title,
         time: parsed.startTime ?? '07:00',
-        description: parsed.description ?? parsed.title,
+        description: parsed.description ?? (parsed.title != 'Wake Up Alarm' ? 'Alarm for ${parsed.title}' : ''),
         isEnabled: true,
+        soundRingtone: defaultAlarmTone,
       );
       await addAlarm(alarm);
     } else if (parsed.type == 'habit') {

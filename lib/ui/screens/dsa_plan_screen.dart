@@ -73,9 +73,10 @@ class _DsaPlanScreenState extends State<DsaPlanScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Plan Header Card
+      body: GlassBackground(
+        child: Column(
+          children: [
+            // Plan Header Card
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: GlassContainer(
@@ -183,8 +184,9 @@ class _DsaPlanScreenState extends State<DsaPlanScreen> {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildStatChip(BuildContext context, String value, String label) {
     final theme = Theme.of(context);

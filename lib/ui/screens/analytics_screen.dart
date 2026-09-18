@@ -33,11 +33,12 @@ class AnalyticsScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      body: GlassBackground(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
             // Rating Glass Card
             AnimatedEntry(
               index: 0,
@@ -215,8 +216,9 @@ class AnalyticsScreen extends StatelessWidget {
           ],
         ),
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildStatBox(BuildContext context, {required String title, required String value, required String subtitle, required Color color}) {
     return Expanded(

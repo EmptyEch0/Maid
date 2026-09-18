@@ -78,26 +78,27 @@ class _TasksInboxScreenState extends State<TasksInboxScreen> with SingleTickerPr
     );
   }
 
-  void _speakTasksOutLoud() {
+  Future<void> _speakTasksOutLoud() async {
     final provider = Provider.of<AppProvider>(context, listen: false);
-    final result = LocalQueryEngine.processQuery("tell my work and today's tasks", provider);
-    TtsService.instance.stop().then((_) {
-      TtsService.instance.speak(result.spokenText);
-    });
+    final result = await LocalQueryEngine.processQuery("tell my work and today's tasks", provider);
+    await TtsService.instance.stop();
+    await TtsService.instance.speak(result.spokenText);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Row(
-          children: [
-            const Icon(Icons.volume_up_rounded, color: Colors.white, size: 20),
-            const SizedBox(width: 8),
-            Expanded(child: Text(result.spokenText)),
-          ],
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.volume_up_rounded, color: Colors.white, size: 20),
+              const SizedBox(width: 8),
+              Expanded(child: Text(result.spokenText)),
+            ],
+          ),
+          duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
         ),
-        duration: const Duration(seconds: 4),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+      );
+    }
   }
 
   @override
@@ -154,12 +155,13 @@ class _TasksInboxScreenState extends State<TasksInboxScreen> with SingleTickerPr
           ],
         ),
       ),
-      body: Column(
-        children: [
-          // Frosted Glass NLP Quick Capture Input Bar
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            child: GlassContainer(
+      body: GlassBackground(
+        child: Column(
+          children: [
+            // Frosted Glass NLP Quick Capture Input Bar
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: GlassContainer(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
               borderRadius: 20,
               child: Row(
@@ -220,6 +222,7 @@ class _TasksInboxScreenState extends State<TasksInboxScreen> with SingleTickerPr
           ),
         ],
       ),
+    ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showAddTaskDialog(context),
         icon: const Icon(Icons.add_task_rounded),

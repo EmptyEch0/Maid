@@ -37,92 +37,96 @@ class _NotesScreenState extends State<NotesScreen> {
           ),
         ],
       ),
-      body: notes.isEmpty
-          ? Center(
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.edit_note_rounded, size: 64, color: isDark ? Colors.white24 : Colors.grey.shade300),
-                    const SizedBox(height: 12),
-                    Text('No notes yet. Tap + to write your first note.', style: TextStyle(color: isDark ? Colors.white60 : Colors.grey.shade600)),
-                  ],
-                ),
-              ),
-            )
-          : ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: notes.length,
-              itemBuilder: (context, index) {
-                final note = notes[index];
-                return AnimatedEntry(
-                  index: index,
-                  child: GlassCard(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    onTap: () => _showNoteEditorDialog(context, note: note),
-                    child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.all(10),
-                          decoration: BoxDecoration(
-                            color: const Color(0xFF6366F1).withValues(alpha: 0.12),
-                            borderRadius: BorderRadius.circular(14),
-                          ),
-                          child: const Icon(Icons.description_rounded, color: Color(0xFF6366F1), size: 22),
-                        ),
-                        const SizedBox(width: 14),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                note.title ?? 'Untitled Note',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                note.body,
-                                maxLines: 2,
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: isDark ? Colors.white70 : Colors.grey.shade700,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              if (note.date != null) ...[
-                                const SizedBox(height: 8),
-                                Row(
-                                  children: [
-                                    GlassPillBadge(
-                                      label: '${note.date} ${note.startTime ?? ""}',
-                                      icon: Icons.event_outlined,
-                                      color: const Color(0xFF0EA5E9),
-                                    ),
-                                  ],
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                        // Action buttons: Reschedule & Delete
-                        IconButton(
-                          icon: const Icon(Icons.schedule_send_rounded, color: Color(0xFF6366F1), size: 20),
-                          tooltip: 'Reschedule Note',
-                          onPressed: () => UniversalRescheduleDialog.showForNote(context, note),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
-                          tooltip: 'Delete Note',
-                          onPressed: () => provider.deleteNote(note.id),
-                        ),
-                      ],
-                    ),
+      body: GlassBackground(
+        child: notes.isEmpty
+            ? Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.edit_note_rounded, size: 64, color: isDark ? Colors.white24 : Colors.grey.shade300),
+                      const SizedBox(height: 12),
+                      Text('No notes yet. Tap + to write your first note.', style: TextStyle(color: isDark ? Colors.white60 : Colors.grey.shade600)),
+                    ],
                   ),
-                );
-              },
-            ),
+                ),
+              )
+            : ListView.builder(
+                padding: const EdgeInsets.all(16),
+                itemCount: notes.length,
+                itemBuilder: (context, index) {
+                  final note = notes[index];
+                  return AnimatedEntry(
+                    index: index,
+                    child: GlassCard(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      onTap: () => _showNoteEditorDialog(context, note: note),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF6366F1).withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Icon(Icons.sticky_note_2_rounded, color: Color(0xFF6366F1), size: 24),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (note.title != null && note.title!.isNotEmpty)
+                                  Text(
+                                    note.title!,
+                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                                  ),
+                                const SizedBox(height: 4),
+                                Text(
+                                  note.body,
+                                  style: TextStyle(
+                                    color: isDark ? Colors.white70 : Colors.grey.shade700,
+                                    fontSize: 13,
+                                  ),
+                                  maxLines: 4,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                                if (note.date != null) ...[
+                                  const SizedBox(height: 8),
+                                  Row(
+                                    children: [
+                                      const Icon(Icons.event_note_rounded, size: 12, color: Colors.grey),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        note.date!,
+                                        style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.w600),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                          // Action buttons: Reschedule & Delete
+                          IconButton(
+                            icon: const Icon(Icons.schedule_send_rounded, color: Color(0xFF6366F1), size: 20),
+                            tooltip: 'Reschedule Note',
+                            onPressed: () => UniversalRescheduleDialog.showForNote(context, note),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
+                            tooltip: 'Delete Note',
+                            onPressed: () => provider.deleteNote(note.id),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showNoteEditorDialog(context),
         icon: const Icon(Icons.note_add_rounded),

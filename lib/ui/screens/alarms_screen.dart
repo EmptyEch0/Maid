@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:provider/provider.dart';
 import '../../models/app_models.dart';
 import '../../providers/app_provider.dart';
+import '../../services/alarm_sound_service.dart';
 import '../widgets/alarm_ringing_dialog.dart';
 import '../widgets/glass_widgets.dart';
 import '../widgets/animated_entry.dart';
@@ -104,6 +106,245 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
     return 'in ${parts.join(' ')}';
   }
 
+  void _testAlarm(BuildContext context, [AlarmItem? alarm]) {
+    final provider = Provider.of<AppProvider>(context, listen: false);
+    final targetAlarm = alarm ??
+        AlarmItem(
+          id: 'test_meeting_alarm',
+          title: 'Meeting with Team',
+          time: '03:00 PM',
+          description: 'Project sprint planning and presentation review.',
+          isEnabled: true,
+          soundRingtone: provider.defaultAlarmTone,
+        );
+    AlarmRingingDialog.show(context, targetAlarm);
+  }
+
+  void _showManageTonesBottomSheet(BuildContext context) {
+    final provider = Provider.of<AppProvider>(context, listen: false);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final theme = Theme.of(context);
+            final colorScheme = theme.colorScheme;
+            final isDark = theme.brightness == Brightness.dark;
+
+            return Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(context).size.height * 0.75,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Header
+                  Row(
+                    children: [
+                      const Icon(Icons.library_music_rounded, color: Color(0xFF6366F1), size: 26),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Manage Alarm Tones & Sounds',
+                        style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                      const Spacer(),
+                      IconButton(
+                        icon: const Icon(Icons.close_rounded),
+                        onPressed: () {
+                          AlarmSoundService.instance.stopAlarmSound();
+                          Navigator.pop(context);
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    'Preview, select default tones, or import audio files (.mp3, .wav) from your device.',
+                    style: theme.textTheme.bodyMedium?.copyWith(color: colorScheme.onSurfaceVariant),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Pick Audio From Device Button
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        side: const BorderSide(color: Color(0xFF6366F1), width: 1.2),
+                      ),
+                      onPressed: () async {
+                        try {
+                          final result = await FilePicker.platform.pickFiles(
+                            type: FileType.custom,
+                            allowedExtensions: ['mp3', 'wav', 'm4a', 'aac', 'ogg', 'flac'],
+                            dialogTitle: 'Select Custom Alarm Tone',
+                          );
+                          if (result != null && result.files.single.path != null) {
+                            final path = result.files.single.path!;
+                            final fileName = result.files.single.name.replaceAll(RegExp(r'\.[^.]+$'), '');
+                            await provider.addCustomAlarmTone(fileName, filePath: path);
+                            setSheetState(() {});
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text('Added custom tone: "$fileName"')),
+                              );
+                            }
+                          }
+                        } catch (_) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Could not open file picker')),
+                            );
+                          }
+                        }
+                      },
+                      icon: const Icon(Icons.audio_file_rounded, color: Color(0xFF6366F1)),
+                      label: const Text(
+                        'Import Audio File from Device',
+                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+                  const Divider(height: 1),
+                  const SizedBox(height: 10),
+
+                  // Tones List
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: provider.availableAlarmTones.length,
+                      itemBuilder: (context, index) {
+                        final tone = provider.availableAlarmTones[index];
+                        final isDefault = tone == provider.defaultAlarmTone;
+                        final filePath = provider.getToneFilePath(tone);
+                        final isCustom = filePath != null;
+                        final isPlaying = AlarmSoundService.instance.isPlaying &&
+                            AlarmSoundService.instance.currentPlayingTone == tone;
+
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 8),
+                          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                          decoration: BoxDecoration(
+                            color: isDefault
+                                ? colorScheme.primary.withValues(alpha: isDark ? 0.2 : 0.1)
+                                : colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(16),
+                            border: Border.all(
+                              color: isDefault
+                                  ? colorScheme.primary.withValues(alpha: 0.4)
+                                  : Colors.transparent,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              // Play / Stop Preview Button
+                              IconButton(
+                                icon: Icon(
+                                  isPlaying ? Icons.stop_circle_rounded : Icons.play_circle_fill_rounded,
+                                  color: isPlaying ? Colors.redAccent : const Color(0xFF6366F1),
+                                  size: 32,
+                                ),
+                                tooltip: isPlaying ? 'Stop Preview' : 'Play Preview',
+                                onPressed: () {
+                                  if (isPlaying) {
+                                    AlarmSoundService.instance.stopAlarmSound();
+                                  } else {
+                                    provider.previewPlayTone(tone);
+                                  }
+                                  setSheetState(() {});
+                                },
+                              ),
+                              const SizedBox(width: 8),
+
+                              // Tone Title & Badges
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        Text(
+                                          tone,
+                                          style: TextStyle(
+                                            fontWeight: isDefault ? FontWeight.bold : FontWeight.w600,
+                                            fontSize: 15,
+                                            color: colorScheme.onSurface,
+                                          ),
+                                        ),
+                                        if (isDefault) ...[
+                                          const SizedBox(width: 8),
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                            decoration: BoxDecoration(
+                                              color: colorScheme.primary,
+                                              borderRadius: BorderRadius.circular(6),
+                                            ),
+                                            child: const Text(
+                                              'DEFAULT',
+                                              style: TextStyle(
+                                                fontSize: 9,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.white,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      isCustom ? 'Custom imported audio file' : 'Built-in manageable preset',
+                                      style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
+                                    ),
+                                  ],
+                                ),
+                              ),
+
+                              // Set Default Button
+                              if (!isDefault)
+                                TextButton(
+                                  onPressed: () async {
+                                    await provider.setDefaultAlarmTone(tone);
+                                    setSheetState(() {});
+                                  },
+                                  child: const Text('Set Default'),
+                                ),
+
+                              // Delete button for custom tones
+                              if (isCustom)
+                                IconButton(
+                                  icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
+                                  onPressed: () async {
+                                    await provider.removeCustomAlarmTone(tone);
+                                    setSheetState(() {});
+                                  },
+                                ),
+                            ],
+                          ),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    ).whenComplete(() {
+      AlarmSoundService.instance.stopAlarmSound();
+    });
+  }
+
   void _showAddEditAlarmDialog(BuildContext context, [AlarmItem? alarm]) {
     final provider = Provider.of<AppProvider>(context, listen: false);
     TimeOfDay selectedTime = TimeOfDay.now();
@@ -163,7 +404,10 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
                         const Spacer(),
                         IconButton(
                           icon: const Icon(Icons.close_rounded),
-                          onPressed: () => Navigator.pop(context),
+                          onPressed: () {
+                            AlarmSoundService.instance.stopAlarmSound();
+                            Navigator.pop(context);
+                          },
                         ),
                       ],
                     ),
@@ -202,46 +446,32 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
                                   children: [
                                     Text(
                                       'ALARM TIME',
-                                      style: theme.textTheme.labelMedium?.copyWith(
+                                      style: theme.textTheme.labelSmall?.copyWith(
                                         fontWeight: FontWeight.bold,
                                         letterSpacing: 1.2,
                                         color: colorScheme.primary,
                                       ),
                                     ),
-                                    const SizedBox(height: 2),
+                                    const SizedBox(height: 4),
                                     Text(
                                       formattedTimeStr,
-                                      style: theme.textTheme.displayMedium?.copyWith(
+                                      style: theme.textTheme.headlineMedium?.copyWith(
                                         fontWeight: FontWeight.w900,
                                         color: colorScheme.onPrimaryContainer,
                                       ),
                                     ),
                                   ],
                                 ),
-                                Icon(Icons.access_time_filled_rounded, size: 36, color: colorScheme.primary),
+                                Icon(Icons.access_time_rounded, color: colorScheme.primary, size: 32),
                               ],
                             ),
-                            const SizedBox(height: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: colorScheme.primary.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(10),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.timer_outlined, size: 14, color: colorScheme.primary),
-                                  const SizedBox(width: 6),
-                                  Text(
-                                    'Alarm will ring $timeRemainingPreview',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w700,
-                                      color: colorScheme.primary,
-                                    ),
-                                  ),
-                                ],
+                            const SizedBox(height: 6),
+                            Text(
+                              'Rings $timeRemainingPreview',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: colorScheme.primary,
                               ),
                             ),
                           ],
@@ -255,8 +485,8 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
                     TextField(
                       controller: titleController,
                       decoration: InputDecoration(
-                        labelText: 'Alarm Title / Label',
-                        hintText: 'e.g. Morning Wakeup, Gym Session, Project Review',
+                        labelText: 'Alarm Title / Work Name',
+                        hintText: 'e.g. Meeting with Team, DSA Practice, Math Exam',
                         prefixIcon: const Icon(Icons.label_rounded),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
                       ),
@@ -269,15 +499,15 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
                       controller: descController,
                       maxLines: 3,
                       decoration: InputDecoration(
-                        labelText: 'Unique Description / Notes for Alarm',
-                        hintText: 'e.g. Wake up, drink 500ml water, review daily priorities.',
+                        labelText: 'Unique Description / Work Notes for Alarm',
+                        hintText: 'e.g. Discuss Q3 deliverables and bring laptop.',
                         alignLabelWithHint: true,
                         prefixIcon: const Padding(
                           padding: EdgeInsets.only(bottom: 40),
                           child: Icon(Icons.description_rounded),
                         ),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-                        helperText: 'This description will be displayed when the alarm rings.',
+                        helperText: 'This will be displayed prominently when the alarm rings.',
                       ),
                     ),
 
@@ -398,6 +628,7 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
                           );
 
                           await provider.addAlarm(newAlarm);
+                          AlarmSoundService.instance.stopAlarmSound();
                           nav.pop();
 
                           final remaining = calculateTimeRemaining(timeStr, selectedDays.toList());
@@ -408,7 +639,7 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
                                   const Icon(Icons.alarm_on_rounded, color: Colors.white, size: 20),
                                   const SizedBox(width: 10),
                                   Expanded(
-                                    child: Text('Alarm set for $timeStr (rings $remaining)'),
+                                    child: Text('Alarm set for $timeStr ($remaining)'),
                                   ),
                                 ],
                               ),
@@ -428,7 +659,9 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
           },
         );
       },
-    );
+    ).whenComplete(() {
+      AlarmSoundService.instance.stopAlarmSound();
+    });
   }
 
   void _showAddHabitDialog(BuildContext context) {
@@ -459,27 +692,13 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Icon(Icons.bolt_rounded, color: colorScheme.primary, size: 28),
-                      const SizedBox(width: 10),
-                      Text(
-                        'New Daily Habit',
-                        style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold),
-                      ),
-                      const Spacer(),
-                      IconButton(
-                        icon: const Icon(Icons.close_rounded),
-                        onPressed: () => Navigator.pop(context),
-                      ),
-                    ],
-                  ),
+                  Text('New Daily Habit', style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.bold)),
                   const SizedBox(height: 16),
                   TextField(
                     controller: titleCtrl,
                     decoration: InputDecoration(
                       labelText: 'Habit Title',
-                      hintText: 'e.g. Drink 2L Water, Morning Meditation, Deep Work',
+                      hintText: 'e.g. Read 15 mins, Drink 2L water',
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
                     ),
                   ),
@@ -487,8 +706,8 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
                   TextField(
                     controller: descCtrl,
                     decoration: InputDecoration(
-                      labelText: 'Goal Description (optional)',
-                      hintText: 'e.g. 30 minutes reading, daily focus routine',
+                      labelText: 'Description / Purpose',
+                      hintText: 'e.g. Improve focus and hydration',
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
                     ),
                   ),
@@ -559,6 +778,18 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
           ],
         ),
         actions: [
+          // Manage Alarm Tones Button
+          IconButton(
+            icon: const Icon(Icons.library_music_rounded),
+            tooltip: 'Manage Alarm Sounds & Tones',
+            onPressed: () => _showManageTonesBottomSheet(context),
+          ),
+          // Test Alarm Ringing Button
+          IconButton(
+            icon: const Icon(Icons.notifications_active_rounded, color: Colors.orangeAccent),
+            tooltip: 'Test Alarm Ringing & Sounds',
+            onPressed: () => _testAlarm(context),
+          ),
           IconButton(
             icon: const Icon(Icons.schedule_send_rounded),
             tooltip: 'Reschedule Anything',
@@ -573,53 +804,55 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
           ],
         ),
       ),
-      body: TabBarView(
-        controller: _tabController,
-        children: [
-          // Tab 1: Alarms
-          provider.alarms.isEmpty
-              ? _buildEmptyState(
-                  context,
-                  icon: Icons.alarm_off_rounded,
-                  title: 'No Alarms Set',
-                  subtitle: 'Tap the + button to create a wake-up alarm with a unique description.',
-                  buttonText: 'Add Alarm',
-                  onTap: () => _showAddEditAlarmDialog(context),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: provider.alarms.length,
-                  itemBuilder: (context, index) {
-                    final alarm = provider.alarms[index];
-                    return AnimatedEntry(
-                      index: index,
-                      child: _buildAlarmCard(context, alarm, provider),
-                    );
-                  },
-                ),
+      body: GlassBackground(
+        child: TabBarView(
+          controller: _tabController,
+          children: [
+            // Tab 1: Alarms
+            provider.alarms.isEmpty
+                ? _buildEmptyState(
+                    context,
+                    icon: Icons.alarm_off_rounded,
+                    title: 'No Alarms Set',
+                    subtitle: 'Tap the + button to create a wake-up alarm with a unique description.',
+                    buttonText: 'Add Alarm',
+                    onTap: () => _showAddEditAlarmDialog(context),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: provider.alarms.length,
+                    itemBuilder: (context, index) {
+                      final alarm = provider.alarms[index];
+                      return AnimatedEntry(
+                        index: index,
+                        child: _buildAlarmCard(context, alarm, provider),
+                      );
+                    },
+                  ),
 
-          // Tab 2: Daily Habits
-          provider.habits.isEmpty
-              ? _buildEmptyState(
-                  context,
-                  icon: Icons.auto_awesome_rounded,
-                  title: 'No Habits Tracked',
-                  subtitle: 'Start building positive daily routines and track your streaks.',
-                  buttonText: 'Add Habit',
-                  onTap: () => _showAddHabitDialog(context),
-                )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: provider.habits.length,
-                  itemBuilder: (context, index) {
-                    final habit = provider.habits[index];
-                    return AnimatedEntry(
-                      index: index,
-                      child: _buildHabitCard(context, habit, provider),
-                    );
-                  },
-                ),
-        ],
+            // Tab 2: Daily Habits
+            provider.habits.isEmpty
+                ? _buildEmptyState(
+                    context,
+                    icon: Icons.auto_awesome_rounded,
+                    title: 'No Habits Tracked',
+                    subtitle: 'Start building positive daily routines and track your streaks.',
+                    buttonText: 'Add Habit',
+                    onTap: () => _showAddHabitDialog(context),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: provider.habits.length,
+                    itemBuilder: (context, index) {
+                      final habit = provider.habits[index];
+                      return AnimatedEntry(
+                        index: index,
+                        child: _buildHabitCard(context, habit, provider),
+                      );
+                    },
+                  ),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () {
@@ -849,9 +1082,9 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
               IconButton(
                 visualDensity: VisualDensity.compact,
                 icon: const Icon(Icons.notifications_active_rounded, color: Colors.orangeAccent, size: 20),
-                tooltip: 'Test Ring Alarm',
+                tooltip: 'Test Ring Alarm & Wake Up Screen',
                 onPressed: () {
-                  AlarmRingingDialog.show(context, alarm);
+                  _testAlarm(context, alarm);
                 },
               ),
               // Edit Button
@@ -966,4 +1199,3 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
     );
   }
 }
-

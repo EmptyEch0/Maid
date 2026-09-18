@@ -112,23 +112,22 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> with Single
     }
   }
 
-  void _executeAssistantQuery(String queryText) {
+  Future<void> _executeAssistantQuery(String queryText) async {
     if (queryText.trim().isEmpty) return;
 
     final provider = Provider.of<AppProvider>(context, listen: false);
-    final result = LocalQueryEngine.processQuery(queryText, provider);
+    final result = await LocalQueryEngine.processQuery(queryText, provider);
 
+    if (!mounted) return;
     setState(() {
       _lastResult = result;
       _isSpeaking = true;
     });
 
     // Speak natural response out loud
-    _ttsService.stop().then((_) {
-      _ttsService.speak(result.spokenText).then((_) {
-        if (mounted) setState(() => _isSpeaking = false);
-      });
-    });
+    await _ttsService.stop();
+    await _ttsService.speak(result.spokenText);
+    if (mounted) setState(() => _isSpeaking = false);
   }
 
   @override
@@ -171,9 +170,10 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> with Single
           ),
         ],
       ),
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6),
+      body: GlassBackground(
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 6),
           child: Column(
             children: [
               // Wake Word Active Banner
@@ -557,7 +557,8 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> with Single
           ),
         ),
       ),
-    );
+    ),
+  );
   }
 
   IconData _getIntentIcon(String intent) {

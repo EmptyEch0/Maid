@@ -184,8 +184,9 @@ class SettingsScreen extends StatelessWidget {
           ),
         ],
       ),
-      body: ListView(
-        padding: const EdgeInsets.all(16),
+      body: GlassBackground(
+        child: ListView(
+          padding: const EdgeInsets.all(16),
         children: [
           // App Logo Header Glass Card
           AnimatedEntry(
@@ -332,22 +333,122 @@ class SettingsScreen extends StatelessWidget {
 
           const SizedBox(height: 12),
 
-          // Theme Section
+          // APPEARANCE & GLASSMORPHIC THEME MANAGER
           AnimatedEntry(
             index: 2,
             child: GlassCard(
-              child: ListTile(
-                contentPadding: EdgeInsets.zero,
-                leading: Icon(
-                  provider.themeMode == ThemeMode.dark ? Icons.dark_mode_rounded : Icons.light_mode_rounded,
-                  color: Colors.amber,
-                ),
-                title: const Text('Dark Mode / Light White Theme', style: TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: const Text('Toggle between Glassmorphic Light and Dark UI'),
-                trailing: Switch(
-                  value: provider.themeMode == ThemeMode.dark,
-                  onChanged: (_) => provider.toggleTheme(),
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(Icons.palette_rounded, color: Color(0xFF6366F1), size: 22),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Appearance & Glassmorphism',
+                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Choose your preferred aesthetic. All widgets and dialogs adapt with frosted blur and high-contrast styling.',
+                    style: TextStyle(fontSize: 12, color: isDark ? Colors.white60 : Colors.grey.shade600),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // 3-Way Mode Segmented Selector
+                  LayoutBuilder(
+                    builder: (context, constraints) {
+                      return SegmentedButton<ThemeMode>(
+                        segments: const [
+                          ButtonSegment<ThemeMode>(
+                            value: ThemeMode.light,
+                            icon: Icon(Icons.light_mode_rounded),
+                            label: Text('Light Glass'),
+                          ),
+                          ButtonSegment<ThemeMode>(
+                            value: ThemeMode.dark,
+                            icon: Icon(Icons.dark_mode_rounded),
+                            label: Text('Dark Glass'),
+                          ),
+                          ButtonSegment<ThemeMode>(
+                            value: ThemeMode.system,
+                            icon: Icon(Icons.auto_mode_rounded),
+                            label: Text('Auto System'),
+                          ),
+                        ],
+                        selected: {provider.themeMode},
+                        onSelectionChanged: (newSelection) {
+                          if (newSelection.isNotEmpty) {
+                            provider.setThemeMode(newSelection.first);
+                          }
+                        },
+                        style: ButtonStyle(
+                          shape: WidgetStateProperty.all(
+                            RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Live Glass Preview Tile
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      color: isDark ? Colors.white.withValues(alpha: 0.05) : const Color(0xFF4F46E5).withValues(alpha: 0.05),
+                      border: Border.all(
+                        color: isDark ? Colors.white.withValues(alpha: 0.1) : const Color(0xFF4F46E5).withValues(alpha: 0.15),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: const Color(0xFF6366F1).withValues(alpha: isDark ? 0.25 : 0.15),
+                          ),
+                          child: Icon(
+                            provider.themeMode == ThemeMode.light
+                                ? Icons.wb_sunny_rounded
+                                : (provider.themeMode == ThemeMode.dark
+                                    ? Icons.nightlight_round
+                                    : Icons.brightness_auto_rounded),
+                            color: const Color(0xFF6366F1),
+                            size: 20,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                provider.themeMode == ThemeMode.light
+                                    ? 'Light Frosted Glass Active'
+                                    : (provider.themeMode == ThemeMode.dark
+                                        ? 'Midnight Obsidian Glass Active'
+                                        : 'System Auto Mode Active'),
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                'Supports Transparent Android Home Widget with Mic read-out',
+                                style: TextStyle(fontSize: 11, color: isDark ? Colors.white60 : Colors.grey.shade600),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -407,7 +508,8 @@ class SettingsScreen extends StatelessWidget {
           ),
         ],
       ),
-    );
+    ),
+  );
   }
 
   void _showPinConfigDialog(BuildContext context, AppProvider provider) {

@@ -1,0 +1,97 @@
+<?xml version="1.0" encoding="utf-8"?>
+<RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/widget_background"
+    android:padding="10dp">
+
+    <!-- Top Header Row: Date & Action Buttons (Mic + Add) -->
+    <LinearLayout
+        android:id="@+id/header_layout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:layout_alignParentTop="true"
+        android:layout_marginBottom="6dp">
+
+        <!-- Date Display (e.g. Thu, Sep 17) -->
+        <TextView
+            android:id="@+id/widget_date"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Today"
+            android:textColor="#FFFFFF"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:shadowColor="#80000000"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="2"
+            android:ellipsize="end"
+            android:maxLines="1" />
+
+        <!-- Mic Button to Read Aloud / Voice Assistant -->
+        <ImageButton
+            android:id="@+id/widget_mic_button"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:background="@drawable/widget_mic_button_bg"
+            android:src="@drawable/ic_mic_white_24"
+            android:scaleType="centerInside"
+            android:contentDescription="Read Tasks Out Loud / Voice Assistant"
+            android:layout_marginEnd="6dp" />
+
+        <!-- Plus Button to Quick Add Task -->
+        <ImageButton
+            android:id="@+id/widget_add_button"
+            android:layout_width="34dp"
+            android:layout_height="34dp"
+            android:background="@drawable/widget_button_bg"
+            android:src="@drawable/ic_add_white_24"
+            android:scaleType="centerInside"
+            android:contentDescription="Add New Task" />
+    </LinearLayout>
+
+    <!-- Content Card: Minimalist Transparent To-Do Works List -->
+    <RelativeLayout
+        android:id="@+id/tasks_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:layout_below="@id/header_layout"
+        android:background="@drawable/widget_background"
+        android:backgroundTint="#1AFFFFFF"
+        android:padding="8dp">
+
+        <TextView
+            android:id="@+id/widget_tasks_text"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_toStartOf="@+id/widget_open_button"
+            android:text="Nothing planned"
+            android:textColor="#F1F5F9"
+            android:textSize="12.5sp"
+            android:lineSpacingExtra="2.5dp"
+            android:shadowColor="#99000000"
+            android:shadowDx="0"
+            android:shadowDy="1"
+            android:shadowRadius="2"
+            android:ellipsize="end"
+            android:maxLines="6" />
+
+        <!-- Bottom-Right Open in Maid Button -->
+        <ImageButton
+            android:id="@+id/widget_open_button"
+            android:layout_width="28dp"
+            android:layout_height="28dp"
+            android:layout_alignParentEnd="true"
+            android:layout_alignParentBottom="true"
+            android:background="@drawable/widget_button_bg"
+            android:src="@drawable/ic_open_in_new_24"
+            android:scaleType="centerInside"
+            android:contentDescription="Open Maid App" />
+    </RelativeLayout>
+
+</RelativeLayout>

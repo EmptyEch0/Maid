@@ -57,9 +57,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // TableCalendar in Frosted Glass Container
+      body: GlassBackground(
+        child: Column(
+          children: [
+            // TableCalendar in Frosted Glass Container
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: GlassContainer(
@@ -314,8 +315,9 @@ class _CalendarScreenState extends State<CalendarScreen> {
                       );
                     },
                   ),
-          ),
-        ],
+            ),
+          ],
+        ),
       ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _showAddEventDialog(context),

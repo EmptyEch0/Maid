@@ -1,36 +1,127 @@
 import 'package:intl/intl.dart';
+import '../models/app_models.dart';
 import '../providers/app_provider.dart';
+import 'nlp_parser_engine.dart';
 
 class LocalQueryResult {
   final String spokenText;
   final String displayText;
   final String intentType;
   final List<String> details;
+  final dynamic createdItem;
 
   LocalQueryResult({
     required this.spokenText,
     required this.displayText,
     required this.intentType,
     this.details = const [],
+    this.createdItem,
   });
 }
 
 class LocalQueryEngine {
-  static LocalQueryResult processQuery(String input, AppProvider provider) {
+  static Future<LocalQueryResult> processQuery(String input, AppProvider provider) async {
     final lower = input.toLowerCase().trim();
     final now = DateTime.now();
     final todayStr = DateFormat('yyyy-MM-dd').format(now);
 
     // 1. GREETINGS & HELP QUERIES
-    if (lower == 'hi' || lower == 'hello' || lower == 'hey' || lower.contains('who are you') || lower.contains('what can you do') || lower == 'help') {
+    if (lower == 'hi' ||
+        lower == 'hello' ||
+        lower == 'hey' ||
+        lower.contains('who are you') ||
+        lower.contains('what can you do') ||
+        lower == 'help') {
       return LocalQueryResult(
-        spokenText: 'Hello! I am your Maid Assistant. You can ask me about today\'s tasks, your schedule, active alarms, or tap "Tell My Work" to hear your full day overview.',
-        displayText: '👋 Hello! I am your Maid Assistant.\n\nAsk me anything:\n• "What is today\'s task?"\n• "Tell my work"\n• "What alarms are set?"\n• "Show habit streaks"',
+        spokenText:
+            'Hello! I am your Maid Assistant. You can ask me about today\'s work, set alarms by saying "meeting at 3pm as alarm", or ask "tell my work" to hear your full day summary.',
+        displayText:
+            '👋 Hello! I am your Maid Assistant.\n\nTry saying:\n• "Meeting at 3pm as alarm"\n• "Tell my work"\n• "What is today\'s task?"\n• "What alarms are set?"\n• "Add task finish assignment"',
         intentType: 'help',
       );
     }
 
-    // 2. TODAY'S TASKS & "TELL MY WORK" / "WHERE IS MY WORK" QUERIES
+    // 2. ACTION: SET / CREATE ALARM (e.g. "meeting at 3pm as alarm", "set alarm for meeting at 3pm", "wake me up at 6am")
+    final isAlarmCreation = lower.contains('set alarm') ||
+        lower.contains('set an alarm') ||
+        lower.contains('as alarm') ||
+        lower.contains('wake me up') ||
+        lower.contains('wake up at') ||
+        (lower.contains('alarm') &&
+            !lower.startsWith('what') &&
+            !lower.startsWith('show') &&
+            !lower.startsWith('list') &&
+            !lower.contains('what alarms') &&
+            !lower.contains('show alarms') &&
+            !lower.contains('any alarm') &&
+            (lower.contains(' at ') ||
+                lower.contains('pm') ||
+                lower.contains('am') ||
+                RegExp(r'\b\d{1,2}(:\d{2})?\b').hasMatch(lower)));
+
+    if (isAlarmCreation) {
+      final parsed = NlpParserEngine.parseText(input);
+      final alarmTime = parsed.startTime ?? '07:00';
+      final alarmTitle = parsed.title.isNotEmpty ? parsed.title : 'Wake Up Alarm';
+
+      final alarm = AlarmItem(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        title: alarmTitle,
+        time: alarmTime,
+        description: parsed.description ?? (parsed.title != 'Wake Up Alarm' ? 'Alarm for $alarmTitle' : ''),
+        isEnabled: true,
+        soundRingtone: provider.defaultAlarmTone,
+      );
+
+      await provider.addAlarm(alarm);
+
+      // Convert 24h time to 12h readable for speech (e.g. 15:00 -> 3:00 PM)
+      String timeSpeech = alarmTime;
+      try {
+        final timeParts = alarmTime.split(':');
+        int hour = int.parse(timeParts[0]);
+        int minute = int.parse(timeParts[1]);
+        final amPm = hour >= 12 ? 'PM' : 'AM';
+        final displayHour = hour > 12 ? hour - 12 : (hour == 0 ? 12 : hour);
+        final minStr = minute == 0 ? '' : ' ${minute.toString().padLeft(2, '0')}';
+        timeSpeech = '$displayHour$minStr $amPm';
+      } catch (_) {}
+
+      return LocalQueryResult(
+        spokenText: 'Alarm set for $alarmTitle at $timeSpeech! I will ring and wake you up.',
+        displayText:
+            '⏰ Alarm Set & Scheduled!\n\n• Title: $alarmTitle\n• Time: $alarmTime\n• Tone: ${provider.defaultAlarmTone}\n• Status: Active & Ready',
+        intentType: 'alarm_created',
+        createdItem: alarm,
+      );
+    }
+
+    // 3. ACTION: ADD TASK / TO-DO (e.g. "add task finish report", "create task study math")
+    if (lower.startsWith('add task') ||
+        lower.startsWith('create task') ||
+        lower.startsWith('task:') ||
+        lower.contains('as task') ||
+        lower.startsWith('remind me to')) {
+      final parsed = NlpParserEngine.parseText(input);
+      final task = TaskItem(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        title: parsed.title,
+        dueDate: parsed.date ?? todayStr,
+        priority: parsed.priority,
+      );
+
+      await provider.addTask(task);
+
+      final pText = task.priority == 3 ? 'high priority' : 'regular';
+      return LocalQueryResult(
+        spokenText: 'Task added: ${task.title} for today as a $pText task.',
+        displayText: '📋 Task Created!\n\n• Title: ${task.title}\n• Due: ${task.dueDate}\n• Priority: P${task.priority}',
+        intentType: 'task_created',
+        createdItem: task,
+      );
+    }
+
+    // 4. TODAY'S TASKS & "TELL MY WORK" / "WHERE IS MY WORK" QUERIES
     final isTodayTaskQuery = lower.contains('today task') ||
         lower.contains("today's task") ||
         lower.contains('todays task') ||
@@ -49,6 +140,10 @@ class LocalQueryEngine {
 
     final isWorkQuery = lower.contains('tell my work') ||
         lower.contains('tell me my work') ||
+        lower.contains('read out loud') ||
+        lower.contains('read tasks') ||
+        lower.contains('read my work') ||
+        lower.contains('speak my work') ||
         lower.contains('where is my work') ||
         lower.contains('where my work') ||
         lower.contains('where are my work') ||
@@ -117,13 +212,13 @@ class LocalQueryEngine {
       );
     }
 
-    // 3. GENERAL TASKS & TO-DO QUERIES
+    // 5. GENERAL TASKS & TO-DO QUERIES
     if (lower.contains('task') || lower.contains('to do') || lower.contains('todo') || lower.contains('pending')) {
       final tasks = provider.tasks;
       if (tasks.isEmpty) {
         return LocalQueryResult(
           spokenText: 'Your task list is completely empty! You have no tasks saved.',
-          displayText: '✅ No tasks found. Use the Top To-Do bar to add one!',
+          displayText: '✅ No tasks found. Use the Top To-Do bar or voice to add one!',
           intentType: 'tasks',
         );
       }
@@ -150,8 +245,14 @@ class LocalQueryEngine {
       }
     }
 
-    // 4. SCHEDULE / CALENDAR QUERIES
-    if (lower.contains('schedule') || lower.contains('event') || lower.contains('calendar') || lower.contains('routine') || lower.contains('what do i have') || lower.contains('today') || lower.contains('tomorrow')) {
+    // 6. SCHEDULE / CALENDAR QUERIES
+    if (lower.contains('schedule') ||
+        lower.contains('event') ||
+        lower.contains('calendar') ||
+        lower.contains('routine') ||
+        lower.contains('what do i have') ||
+        lower.contains('today') ||
+        lower.contains('tomorrow')) {
       bool isTomorrow = lower.contains('tomorrow');
       final targetDate = isTomorrow ? now.add(const Duration(days: 1)) : now;
       final targetDateStr = DateFormat('yyyy-MM-dd').format(targetDate);
@@ -179,7 +280,7 @@ class LocalQueryEngine {
       }
     }
 
-    // 5. ALARMS & WAKE-UP QUERIES
+    // 7. READ-ONLY ALARMS QUERIES
     if (lower.contains('alarm') || lower.contains('wake up') || lower.contains('ring')) {
       final alarms = provider.alarms;
       if (alarms.isEmpty) {
@@ -212,7 +313,7 @@ class LocalQueryEngine {
       }
     }
 
-    // 6. HABITS QUERIES
+    // 8. HABITS QUERIES
     if (lower.contains('habit') || lower.contains('streak')) {
       final habits = provider.habits;
       if (habits.isEmpty) {
@@ -235,7 +336,7 @@ class LocalQueryEngine {
       );
     }
 
-    // 7. LOCAL NOTE & KNOWLEDGE KEYWORD SEARCH
+    // 9. LOCAL NOTE SEARCH
     String searchTerm = lower
         .replaceAll(RegExp(r'^(search|find|show|where|look for|notes about|note for)\s+', caseSensitive: false), '')
         .trim();
@@ -262,10 +363,11 @@ class LocalQueryEngine {
       }
     }
 
-    // 8. DEFAULT / QUICK CAPTURE FALLBACK
+    // 10. DEFAULT / QUICK CAPTURE FALLBACK
+    await provider.processQuickCapture(input);
     return LocalQueryResult(
-      spokenText: 'I processed your request: $input',
-      displayText: '⚡ Command captured: "$input"',
+      spokenText: 'I processed and saved your request: $input',
+      displayText: '⚡ Command captured & saved: "$input"',
       intentType: 'quick_capture',
     );
   }

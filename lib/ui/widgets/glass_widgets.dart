@@ -447,3 +447,59 @@ class GlassLoader extends StatelessWidget {
     );
   }
 }
+
+/// Ambient Glassmorphic Background with soft ambient glow orbs
+class GlassBackground extends StatelessWidget {
+  final Widget child;
+
+  const GlassBackground({super.key, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
+    return Stack(
+      children: [
+        // Ambient background gradient canvas
+        Positioned.fill(
+          child: Container(
+            color: isDark ? const Color(0xFF0B0F19) : const Color(0xFFF8FAFC),
+          ),
+        ),
+        // Ambient glowing orb 1 (Top Left)
+        Positioned(
+          top: -60,
+          left: -60,
+          width: 240,
+          height: 240,
+          child: Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: isDark
+                  ? const Color(0xFF4F46E5).withValues(alpha: 0.15)
+                  : const Color(0xFF6366F1).withValues(alpha: 0.10),
+            ),
+          ),
+        ),
+        // Ambient glowing orb 2 (Bottom Right)
+        Positioned(
+          bottom: 40,
+          right: -80,
+          width: 280,
+          height: 280,
+          child: Container(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: isDark
+                  ? const Color(0xFF0EA5E9).withValues(alpha: 0.12)
+                  : const Color(0xFF38BDF8).withValues(alpha: 0.10),
+            ),
+          ),
+        ),
+        // Foreground Content
+        child,
+      ],
+    );
+  }
+}
+
