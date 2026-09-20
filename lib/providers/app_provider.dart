@@ -322,6 +322,22 @@ class AppProvider extends ChangeNotifier {
     await refreshData();
   }
 
+  Future<void> updateNote(NoteItem note) async {
+    await DatabaseHelper.instance.insertNote(note);
+    await refreshData();
+  }
+
+  Future<void> updateNoteTitle(String id, String newTitle) async {
+    final idx = _notes.indexWhere((n) => n.id == id);
+    if (idx != -1) {
+      final updated = _notes[idx].copyWith(
+        title: newTitle.trim().isEmpty ? 'Untitled' : newTitle.trim(),
+      );
+      await DatabaseHelper.instance.insertNote(updated);
+      await refreshData();
+    }
+  }
+
   Future<void> deleteNote(String id) async {
     await DatabaseHelper.instance.deleteNote(id);
     await refreshData();

@@ -343,7 +343,7 @@ class LocalQueryEngine {
 
     if (searchTerm.isNotEmpty && searchTerm.length > 2) {
       final matchedNotes = provider.notes.where((n) {
-        final titleMatch = (n.title ?? '').toLowerCase().contains(searchTerm);
+        final titleMatch = n.displayTitle.toLowerCase().contains(searchTerm);
         final bodyMatch = n.body.toLowerCase().contains(searchTerm);
         return titleMatch || bodyMatch;
       }).toList();
@@ -351,8 +351,8 @@ class LocalQueryEngine {
       if (matchedNotes.isNotEmpty) {
         final topNote = matchedNotes.first;
         final preview = topNote.body.length > 80 ? '${topNote.body.substring(0, 80)}...' : topNote.body;
-        final spokenStr = 'Found ${matchedNotes.length} matching notes. Top note says: $preview';
-        final detailLines = matchedNotes.map((n) => '• ${n.title ?? 'Note'}: ${n.body}').toList();
+        final spokenStr = 'Found ${matchedNotes.length} matching notes. Top note (${topNote.displayTitle}) says: $preview';
+        final detailLines = matchedNotes.map((n) => '• ${n.displayTitle}: ${n.body}').toList();
 
         return LocalQueryResult(
           spokenText: spokenStr,

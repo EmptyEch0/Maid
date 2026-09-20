@@ -108,7 +108,7 @@ class UniversalRescheduleDialog extends StatefulWidget {
       backgroundColor: Colors.transparent,
       builder: (ctx) => UniversalRescheduleDialog(
         type: RescheduleTargetType.note,
-        title: note.title ?? 'Note',
+        title: note.displayTitle,
         currentSubtitle: note.date != null ? 'Scheduled: ${note.date} ${note.startTime ?? ""}' : 'No schedule',
         itemId: note.id,
         note: note,
@@ -195,6 +195,21 @@ class UniversalRescheduleDialog extends StatefulWidget {
                         onTap: () {
                           Navigator.pop(ctx);
                           showForEvent(context, e);
+                        },
+                      )),
+                      const SizedBox(height: 12),
+                    ],
+                    if (provider.notes.isNotEmpty) ...[
+                      const Text('NOTES', style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.grey)),
+                      const SizedBox(height: 6),
+                      ...provider.notes.take(5).map((n) => ListTile(
+                        leading: const Icon(Icons.sticky_note_2_rounded, color: Color(0xFF6366F1)),
+                        title: Text(n.displayTitle),
+                        subtitle: Text(n.body.isNotEmpty ? n.body : '(Empty content)', maxLines: 1, overflow: TextOverflow.ellipsis),
+                        trailing: const Icon(Icons.chevron_right_rounded),
+                        onTap: () {
+                          Navigator.pop(ctx);
+                          showForNote(context, n);
                         },
                       )),
                     ],

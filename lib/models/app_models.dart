@@ -305,6 +305,16 @@ class NoteItem {
     );
   }
 
+  String get displayTitle {
+    if (title != null && title!.trim().isNotEmpty) {
+      return title!.trim();
+    }
+    return 'Untitled';
+  }
+
+  bool get isUntitled =>
+      title == null || title!.trim().isEmpty || title!.trim().toLowerCase() == 'untitled';
+
   NoteItem copyWith({
     String? id,
     String? title,

@@ -281,5 +281,83 @@ void main() {
       expect(appProvider.themeMode == ThemeMode.light || appProvider.themeMode == ThemeMode.dark, true);
     });
   });
+
+  group('8. Note Title, Untitled Fallback & Renaming Tests', () {
+    test('Note with empty or null title defaults displayTitle to "Untitled"', () {
+      final untitledNote1 = NoteItem(
+        id: 'n1',
+        title: null,
+        body: 'books, pens, pencils',
+      );
+      expect(untitledNote1.displayTitle, 'Untitled');
+      expect(untitledNote1.isUntitled, true);
+
+      final untitledNote2 = NoteItem(
+        id: 'n2',
+        title: '   ',
+        body: 'milk, eggs, bread',
+      );
+      expect(untitledNote2.displayTitle, 'Untitled');
+      expect(untitledNote2.isUntitled, true);
+
+      final untitledNote3 = NoteItem(
+        id: 'n3',
+        title: 'Untitled',
+        body: 'grocery items',
+      );
+      expect(untitledNote3.displayTitle, 'Untitled');
+      expect(untitledNote3.isUntitled, true);
+    });
+
+    test('Note with custom title returns trimmed custom title and isUntitled is false', () {
+      final namedNote = NoteItem(
+        id: 'n4',
+        title: 'Grocery Shopping',
+        body: 'apples, bananas, oats',
+        category: 'Shopping',
+      );
+      expect(namedNote.displayTitle, 'Grocery Shopping');
+      expect(namedNote.isUntitled, false);
+    });
+
+    test('Renaming Note title produces updated NoteItem correctly', () {
+      final note = NoteItem(
+        id: 'n5',
+        title: null,
+        body: 'books, pens',
+      );
+      expect(note.displayTitle, 'Untitled');
+
+      final renamed = note.copyWith(title: 'Stationary & Books');
+      expect(renamed.id, 'n5');
+      expect(renamed.displayTitle, 'Stationary & Books');
+      expect(renamed.isUntitled, false);
+      expect(renamed.body, 'books, pens');
+    });
+
+    test('Note serialization with title preserves all fields', () {
+      final note = NoteItem(
+        id: 'n6',
+        title: 'Shopping',
+        body: 'books, pens, groceries',
+        category: 'Shopping',
+        date: '2026-08-20',
+        startTime: '10:00',
+      );
+
+      final map = note.toMap();
+      expect(map['title'], 'Shopping');
+      expect(map['body'], 'books, pens, groceries');
+      expect(map['category'], 'Shopping');
+
+      final fromMap = NoteItem.fromMap(map);
+      expect(fromMap.id, 'n6');
+      expect(fromMap.title, 'Shopping');
+      expect(fromMap.displayTitle, 'Shopping');
+      expect(fromMap.body, 'books, pens, groceries');
+      expect(fromMap.date, '2026-08-20');
+      expect(fromMap.startTime, '10:00');
+    });
+  });
 }
 
