@@ -126,14 +126,19 @@ class AppProvider extends ChangeNotifier {
 
     await NotificationService.instance.init();
     await WidgetUpdateService.instance.init();
-    await PermissionService.instance.requestAllAppPermissions();
-    await SpeechService.instance.init();
     await refreshData();
 
-    // Sync all alarms with exact Android Notification scheduler
-    await NotificationService.instance.syncAllAlarms(_alarms);
+    // Warmup non-blocking background services asynchronously
+    _warmupBackgroundServices();
+  }
 
-    AlarmService.instance.startMonitoring(() => _alarms);
+  void _warmupBackgroundServices() async {
+    try {
+      await NotificationService.instance.syncAllAlarms(_alarms);
+      AlarmService.instance.startMonitoring(() => _alarms);
+      await PermissionService.instance.requestAllAppPermissions();
+      await SpeechService.instance.init();
+    } catch (_) {}
   }
 
   // --- HELPER GETTERS FOR TODAY'S WORK & TASKS ---

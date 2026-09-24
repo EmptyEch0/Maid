@@ -1,5 +1,6 @@
 import 'package:home_widget/home_widget.dart';
 import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_models.dart';
 import '../engine/scheduling_engine.dart';
 
@@ -16,7 +17,7 @@ class WidgetUpdateService {
     } catch (_) {}
   }
 
-  /// Updates the Android Home Screen Widget with the latest to-dos and work items
+  /// Updates the Android Home Screen Widget with the latest to-dos and scheduled events
   Future<void> updateTodoWidget({
     required List<TaskItem> tasks,
     required List<CalendarEvent> events,
@@ -26,15 +27,9 @@ class WidgetUpdateService {
     try {
       final now = DateTime.now();
       final todayStr = DateFormat('yyyy-MM-dd').format(now);
-      final dateHeader = DateFormat('EEE, MMM d').format(now); // e.g. "Thu, Sep 17"
+      final dateHeader = DateFormat('EEE, MMM d').format(now); // e.g. "Thu, Sep 24"
 
-      // Filter pending tasks for today or unscheduled
-      final pendingTasks = tasks.where((t) {
-        final isTodayOrNoDate = t.dueDate == null || t.dueDate == todayStr;
-        return isTodayOrNoDate && t.status != 'completed';
-      }).toList();
-
-      // Resolve today's scheduled calendar routines/events
+      // 1. Resolve today's scheduled events/routines
       final todaySlots = SchedulingEngine.resolveScheduleForDate(
         targetDate: todayStr,
         oneOffEvents: events,
@@ -42,46 +37,65 @@ class WidgetUpdateService {
         exceptions: exceptions,
       );
 
+      // 2. Filter pending tasks
+      final todayPendingTasks = tasks.where((t) {
+        final isTodayOrNoDate = t.dueDate == null || t.dueDate == todayStr;
+        return isTodayOrNoDate && t.status != 'completed';
+      }).toList();
+
+      final allPendingTasks = tasks.where((t) => t.status != 'completed').toList();
+
       final List<String> displayLines = [];
 
-      // 1. Add pending to-dos
-      for (final task in pendingTasks.take(5)) {
-        String priorityIcon = '•';
-        if (task.priority == 3) {
-          priorityIcon = '🔴';
-        } else if (task.priority == 2) {
-          priorityIcon = '🟡';
-        } else {
-          priorityIcon = '⚪';
+      // Add Today's Scheduled Events first
+      if (todaySlots.isNotEmpty) {
+        for (final slot in todaySlots.take(3)) {
+          displayLines.add('📅 ${slot.startTime} ${slot.title}');
         }
-        displayLines.add('$priorityIcon ${task.title}');
       }
 
-      // If there are more tasks
-      if (pendingTasks.length > 5) {
-        displayLines.add('+ ${pendingTasks.length - 5} more tasks...');
+      // Add Today's Tasks or General Pending Tasks
+      final tasksToShow = todayPendingTasks.isNotEmpty ? todayPendingTasks : allPendingTasks;
+      final remainingSlotCount = 5 - displayLines.length;
+
+      if (tasksToShow.isNotEmpty && remainingSlotCount > 0) {
+        for (final task in tasksToShow.take(remainingSlotCount)) {
+          String icon = '•';
+          if (task.priority == 3) {
+            icon = '🔴';
+          } else if (task.priority == 2) {
+            icon = '🟡';
+          }
+          displayLines.add('$icon ${task.title}');
+        }
       }
 
-      // 2. Add upcoming routines if space permits
-      if (displayLines.length < 5 && todaySlots.isNotEmpty) {
-        for (final slot in todaySlots.take(5 - displayLines.length)) {
-          displayLines.add('⏰ ${slot.startTime} ${slot.title}');
-        }
+      if (tasksToShow.length > remainingSlotCount && remainingSlotCount > 0) {
+        final remaining = tasksToShow.length - remainingSlotCount;
+        displayLines.add('+$remaining more...');
       }
 
       String tasksText;
       if (displayLines.isEmpty) {
-        tasksText = '🎉 All caught up!\nNothing planned for today.';
+        tasksText = '🎉 All caught up!\nNothing planned.';
       } else {
         tasksText = displayLines.join('\n');
       }
 
-      // Save data for Android AppWidget
+      // 1. Save data via HomeWidget (group.com.maid.app.maid / default prefs)
       await HomeWidget.saveWidgetData<String>('widget_date', dateHeader);
       await HomeWidget.saveWidgetData<String>('widget_tasks_text', tasksText);
-      await HomeWidget.saveWidgetData<int>('widget_task_count', pendingTasks.length);
+      await HomeWidget.saveWidgetData<int>('widget_task_count', tasksToShow.length);
 
-      // Trigger native widget update
+      // 2. Also save to Flutter SharedPreferences as backup
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('widget_date', dateHeader);
+        await prefs.setString('widget_tasks_text', tasksText);
+        await prefs.setInt('widget_task_count', tasksToShow.length);
+      } catch (_) {}
+
+      // 3. Trigger native widget update
       await HomeWidget.updateWidget(
         name: androidWidgetProvider,
         androidName: androidWidgetProvider,

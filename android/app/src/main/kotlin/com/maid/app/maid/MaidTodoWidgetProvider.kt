@@ -14,20 +14,11 @@ class MaidTodoWidgetProvider : AppWidgetProvider() {
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray
     ) {
-        // Read data saved from Flutter / home_widget
-        val prefs = context.getSharedPreferences("FlutterSharedPreferences", Context.MODE_PRIVATE)
+        val dateStr = getStoredString(context, "widget_date") ?: "Today"
+        val tasksText = getStoredString(context, "widget_tasks_text") ?: "🎉 All caught up!\nNothing planned."
 
         for (appWidgetId in appWidgetIds) {
             val views = RemoteViews(context.packageName, R.layout.maid_todo_widget).apply {
-                // Read widget data saved from Flutter
-                val dateStr = prefs.getString("widget_date", null)
-                    ?: prefs.getString("flutter.widget_date", "Today")
-                    ?: "Today"
-
-                val tasksText = prefs.getString("widget_tasks_text", null)
-                    ?: prefs.getString("flutter.widget_tasks_text", "🎉 All caught up!\nNothing planned.")
-                    ?: "🎉 All caught up!\nNothing planned."
-
                 setTextViewText(R.id.widget_date, dateStr)
                 setTextViewText(R.id.widget_tasks_text, tasksText)
 
@@ -77,5 +68,25 @@ class MaidTodoWidgetProvider : AppWidgetProvider() {
 
             appWidgetManager.updateAppWidget(appWidgetId, views)
         }
+    }
+
+    private fun getStoredString(context: Context, key: String): String? {
+        val candidatePrefs = listOf(
+            "group.com.maid.app.maid",
+            "${context.packageName}_preferences",
+            "FlutterSharedPreferences",
+            context.packageName
+        )
+        for (prefName in candidatePrefs) {
+            try {
+                val sp = context.getSharedPreferences(prefName, Context.MODE_PRIVATE)
+                val directVal = sp.getString(key, null)
+                if (!directVal.isNullOrBlank()) return directVal
+
+                val flutterVal = sp.getString("flutter.$key", null)
+                if (!flutterVal.isNullOrBlank()) return flutterVal
+            } catch (_: Exception) {}
+        }
+        return null
     }
 }

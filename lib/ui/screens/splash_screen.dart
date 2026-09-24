@@ -15,77 +15,50 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
   late Animation<double> _scaleAnimation;
   late Animation<double> _fadeAnimation;
 
-  String _statusText = 'Initializing Maid Assistant Engine...';
-  int _step = 0;
-  Timer? _statusTimer;
-
-  final List<String> _steps = [
-    'Initializing Maid Assistant Engine...',
-    'Loading Offline Database & Storage...',
-    'Syncing Conflict-Free Calendar & Alarms...',
-    'Preparing Glassmorphic Light Workspace...',
-    'Ready! Welcome to Maid ✨',
-  ];
-
   @override
   void initState() {
     super.initState();
     _animController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1200),
+      duration: const Duration(milliseconds: 350),
     );
 
-    _scaleAnimation = Tween<double>(begin: 0.8, end: 1.0).animate(
-      CurvedAnimation(parent: _animController, curve: Curves.easeOutBack),
+    _scaleAnimation = Tween<double>(begin: 0.92, end: 1.0).animate(
+      CurvedAnimation(parent: _animController, curve: Curves.easeOutCubic),
     );
 
     _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(parent: _animController, curve: Curves.easeInOut),
+      CurvedAnimation(parent: _animController, curve: Curves.easeIn),
     );
 
     _animController.forward();
 
-    // Advance status messages smoothly
-    _statusTimer = Timer.periodic(const Duration(milliseconds: 320), (timer) {
-      if (_step < _steps.length - 1) {
-        setState(() {
-          _step++;
-          _statusText = _steps[_step];
-        });
-      } else {
-        timer.cancel();
+    // Fast, responsive navigation right after the snappy entrance
+    Future.delayed(const Duration(milliseconds: 400), () {
+      if (mounted) {
         _navigateToHome();
       }
     });
   }
 
   void _navigateToHome() {
-    Future.delayed(const Duration(milliseconds: 250), () {
-      if (mounted) {
-        Navigator.of(context).pushReplacement(
-          PageRouteBuilder(
-            transitionDuration: const Duration(milliseconds: 600),
-            pageBuilder: (context, animation, secondaryAnimation) => const HomeShell(),
-            transitionsBuilder: (context, animation, secondaryAnimation, child) {
-              return FadeTransition(
-                opacity: animation,
-                child: ScaleTransition(
-                  scale: Tween<double>(begin: 0.96, end: 1.0).animate(
-                    CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
-                  ),
-                  child: child,
-                ),
-              );
-            },
-          ),
-        );
-      }
-    });
+    if (!mounted) return;
+    Navigator.of(context).pushReplacement(
+      PageRouteBuilder(
+        transitionDuration: const Duration(milliseconds: 250),
+        pageBuilder: (context, animation, secondaryAnimation) => const HomeShell(),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: animation,
+            child: child,
+          );
+        },
+      ),
+    );
   }
 
   @override
   void dispose() {
-    _statusTimer?.cancel();
     _animController.dispose();
     super.dispose();
   }
@@ -178,53 +151,6 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                             style: theme.textTheme.bodyMedium?.copyWith(
                               color: isDark ? Colors.white70 : const Color(0xFF64748B),
                               fontWeight: FontWeight.w500,
-                            ),
-                          ),
-
-                          const SizedBox(height: 48),
-
-                          // Glass Loading Card with Micro-progress
-                          GlassContainer(
-                            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 16),
-                            borderRadius: 20,
-                            child: Column(
-                              children: [
-                                Row(
-                                  children: [
-                                    SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2.5,
-                                        valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 14),
-                                    Expanded(
-                                      child: Text(
-                                        _statusText,
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w600,
-                                          color: isDark ? Colors.white : const Color(0xFF1E293B),
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                ClipRRect(
-                                  borderRadius: BorderRadius.circular(6),
-                                  child: LinearProgressIndicator(
-                                    value: (_step + 1) / _steps.length,
-                                    backgroundColor: colorScheme.primary.withValues(alpha: 0.15),
-                                    valueColor: AlwaysStoppedAnimation<Color>(colorScheme.primary),
-                                    minHeight: 4,
-                                  ),
-                                ),
-                              ],
                             ),
                           ),
                         ],

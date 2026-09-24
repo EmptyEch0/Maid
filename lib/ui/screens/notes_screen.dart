@@ -196,7 +196,7 @@ class _NotesScreenState extends State<NotesScreen> {
                 scrollDirection: Axis.horizontal,
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                 itemCount: _categories.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 8),
+                separatorBuilder: (_, _) => const SizedBox(width: 8),
                 itemBuilder: (context, idx) {
                   final cat = _categories[idx];
                   final isSelected = _selectedCategory == cat;
