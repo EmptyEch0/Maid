@@ -437,7 +437,7 @@ class SettingsScreen extends StatelessWidget {
                                     children: [
                                       Text('☀️ Morning Plan', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFF59E0B))),
                                       Spacer(),
-                                      Icon(Icons.edit_time_rounded, size: 14, color: Color(0xFFF59E0B)),
+                                      Icon(Icons.access_time_rounded, size: 14, color: Color(0xFFF59E0B)),
                                     ],
                                   ),
                                   const SizedBox(height: 4),
@@ -486,7 +486,7 @@ class SettingsScreen extends StatelessWidget {
                                     children: [
                                       Text('🌙 Evening Review', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF8B5CF6))),
                                       Spacer(),
-                                      Icon(Icons.edit_time_rounded, size: 14, color: Color(0xFF8B5CF6)),
+                                      Icon(Icons.access_time_rounded, size: 14, color: Color(0xFF8B5CF6)),
                                     ],
                                   ),
                                   const SizedBox(height: 4),

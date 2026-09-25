@@ -271,6 +271,8 @@ class AppProvider extends ChangeNotifier {
     return false;
   }
 
+  bool verifyPin(String pin) => unlockWithPin(pin);
+
   Future<void> removePin() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove('pin_hash');
@@ -285,6 +287,24 @@ class AppProvider extends ChangeNotifier {
       _isUnlocked = false;
       notifyListeners();
     }
+  }
+
+  WeeklyReviewReport getWeeklyReport() {
+    return WeeklyReviewEngine.generateReport(
+      studySessions: _studySessions,
+      tasks: _tasks,
+      exceptions: _exceptions,
+    );
+  }
+
+  List<CandidateSlot> getPostponeCandidates(DateTime fromDate, int durationMinutes) {
+    return SchedulingEngine.findCandidateSlots(
+      fromDate: fromDate,
+      durationMinutes: durationMinutes,
+      oneOffEvents: _events,
+      recurrenceRules: _recurrenceRules,
+      exceptions: _exceptions,
+    );
   }
 
   // --- SCHEDULE RESOLUTION & RESCHEDULING ENGINE ---
@@ -416,6 +436,15 @@ class AppProvider extends ChangeNotifier {
     await refreshData();
   }
 
+  Future<void> updateNoteTitle(String id, String title) async {
+    final idx = _notes.indexWhere((n) => n.id == id);
+    if (idx != -1) {
+      final updated = _notes[idx].copyWith(title: title);
+      await DatabaseHelper.instance.insertNote(updated);
+      await refreshData();
+    }
+  }
+
   Future<void> rescheduleNote(String noteId, String newDate, {String? newTime}) async {
     final idx = _notes.indexWhere((n) => n.id == noteId);
     if (idx != -1) {
@@ -426,6 +455,59 @@ class AppProvider extends ChangeNotifier {
       await DatabaseHelper.instance.insertNote(updated);
       await refreshData();
     }
+  }
+
+  Future<void> rescheduleTask(String taskId, String newDate, String? newTime) async {
+    final idx = _tasks.indexWhere((t) => t.id == taskId);
+    if (idx != -1) {
+      final updated = _tasks[idx].copyWith(dueDate: newDate);
+      await DatabaseHelper.instance.insertTask(updated);
+      await refreshData();
+    }
+  }
+
+  Future<void> rescheduleAlarm(String alarmId, String newTime) async {
+    final idx = _alarms.indexWhere((a) => a.id == alarmId);
+    if (idx != -1) {
+      final updated = _alarms[idx].copyWith(time: newTime);
+      await DatabaseHelper.instance.insertAlarm(updated);
+      await NotificationService.instance.scheduleAlarmNotification(updated, enableVibration: _vibrationEnabled);
+      await refreshData();
+    }
+  }
+
+  Future<void> rescheduleEvent(String eventId, String newDate, String newStartTime, String newEndTime) async {
+    final idx = _events.indexWhere((e) => e.id == eventId);
+    if (idx != -1) {
+      final updated = _events[idx].copyWith(
+        date: newDate,
+        startTime: newStartTime,
+        endTime: newEndTime,
+      );
+      await DatabaseHelper.instance.insertEvent(updated);
+      await refreshData();
+    }
+  }
+
+  Future<void> postponeEvent({
+    required String recurrenceRuleId,
+    required String originalDate,
+    required String newDate,
+    required String newStartTime,
+    required String newEndTime,
+    String? reason,
+  }) async {
+    final exception = ScheduleException(
+      id: DateTime.now().millisecondsSinceEpoch.toString(),
+      recurrenceRuleId: recurrenceRuleId,
+      originalDate: originalDate,
+      newDate: newDate,
+      newStartTime: newStartTime,
+      newEndTime: newEndTime,
+      reason: reason,
+    );
+    await DatabaseHelper.instance.insertException(exception);
+    await refreshData();
   }
 
   // --- STUDY SESSIONS ---

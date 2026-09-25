@@ -760,7 +760,7 @@ class _UniversalRescheduleDialogState extends State<UniversalRescheduleDialog> {
         SnackBar(content: Text('Rescheduled event "${widget.title}" to $dateStr')),
       );
     } else if (widget.type == RescheduleTargetType.note && widget.note != null) {
-      await provider.rescheduleNote(widget.note!.id, dateStr, startTimeStr);
+      await provider.rescheduleNote(widget.note!.id, dateStr, newTime: startTimeStr);
       messenger.showSnackBar(
         SnackBar(content: Text('Rescheduled note "${widget.title}" to $dateStr')),
       );

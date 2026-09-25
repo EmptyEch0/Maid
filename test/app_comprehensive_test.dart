@@ -8,7 +8,6 @@ import 'package:maid/engine/weekly_review_engine.dart';
 import 'package:maid/engine/dsa_plan_seeder.dart';
 import 'package:maid/engine/local_query_engine.dart';
 import 'package:maid/services/speech_service.dart';
-import 'package:maid/services/tts_service.dart';
 import 'package:maid/providers/app_provider.dart';
 
 void main() {
