@@ -6,6 +6,7 @@ import '../../services/speech_service.dart';
 import '../../services/tts_service.dart';
 import '../../engine/local_query_engine.dart';
 import '../widgets/glass_widgets.dart';
+import '../widgets/daily_briefing_dialog.dart';
 import '../widgets/universal_reschedule_dialog.dart';
 
 class VoiceAssistantScreen extends StatefulWidget {
@@ -134,6 +135,7 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> with Single
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
     final provider = Provider.of<AppProvider>(context);
     final pendingToday = provider.pendingTodayTasks;
 
@@ -272,6 +274,48 @@ class _VoiceAssistantScreenState extends State<VoiceAssistantScreen> with Single
                   ),
                 ),
               ),
+
+              // Daily Morning & Nightly Briefings Row
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFFF59E0B).withValues(alpha: isDark ? 0.2 : 0.12),
+                        foregroundColor: const Color(0xFFF59E0B),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          side: BorderSide(color: const Color(0xFFF59E0B).withValues(alpha: 0.3)),
+                        ),
+                        elevation: 0,
+                      ),
+                      onPressed: () => DailyBriefingDialog.show(context, isEvening: false, autoPlaySpeech: true),
+                      icon: const Text('☀️', style: TextStyle(fontSize: 16)),
+                      label: const Text('Morning Plan', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF8B5CF6).withValues(alpha: isDark ? 0.2 : 0.12),
+                        foregroundColor: const Color(0xFF8B5CF6),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          side: BorderSide(color: const Color(0xFF8B5CF6).withValues(alpha: 0.3)),
+                        ),
+                        elevation: 0,
+                      ),
+                      onPressed: () => DailyBriefingDialog.show(context, isEvening: true, autoPlaySpeech: true),
+                      icon: const Text('🌙', style: TextStyle(fontSize: 16)),
+                      label: const Text('Evening Review', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12.5)),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
 
               // PROMINENT "TELL MY WORK & TODAY'S TASKS" TRIGGER BUTTON
               Container(

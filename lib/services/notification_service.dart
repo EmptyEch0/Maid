@@ -229,6 +229,100 @@ class NotificationService {
     } catch (_) {}
   }
 
+  static const int morningBriefingNotifId = 9001;
+  static const int eveningBriefingNotifId = 9002;
+
+  /// Schedules repeating daily morning & evening briefing reminders
+  Future<void> scheduleDailyBriefings({
+    required bool enabled,
+    String morningTime = '09:00',
+    String eveningTime = '20:00',
+    String userName = 'Likhith',
+    int pendingTasksCount = 0,
+    int todayEventsCount = 0,
+  }) async {
+    // Cancel existing daily briefing notifications
+    await cancelNotification(morningBriefingNotifId);
+    await cancelNotification(eveningBriefingNotifId);
+
+    if (!enabled) return;
+
+    try {
+      final now = DateTime.now();
+
+      // 1. Morning Briefing (e.g. 09:00 AM)
+      final mParts = morningTime.split(':');
+      final mHour = int.tryParse(mParts[0]) ?? 9;
+      final mMin = mParts.length > 1 ? int.tryParse(mParts[1]) ?? 0 : 0;
+
+      var morningTarget = DateTime(now.year, now.month, now.day, mHour, mMin);
+      if (morningTarget.isBefore(now)) {
+        morningTarget = morningTarget.add(const Duration(days: 1));
+      }
+      final tz.TZDateTime tzMorning = tz.TZDateTime.from(morningTarget, tz.local);
+
+      // 2. Evening Briefing (e.g. 08:00 PM / 20:00)
+      final eParts = eveningTime.split(':');
+      final eHour = int.tryParse(eParts[0]) ?? 20;
+      final eMin = eParts.length > 1 ? int.tryParse(eParts[1]) ?? 0 : 0;
+
+      var eveningTarget = DateTime(now.year, now.month, now.day, eHour, eMin);
+      if (eveningTarget.isBefore(now)) {
+        eveningTarget = eveningTarget.add(const Duration(days: 1));
+      }
+      final tz.TZDateTime tzEvening = tz.TZDateTime.from(eveningTarget, tz.local);
+
+      final AndroidNotificationDetails briefingAndroidDetails = AndroidNotificationDetails(
+        'maid_alarm_channel',
+        'Maid Alarms & Wake-Up Calls',
+        channelDescription: 'Daily morning and evening briefings with screen wake support',
+        importance: Importance.max,
+        priority: Priority.max,
+        playSound: true,
+        enableVibration: true,
+        fullScreenIntent: true,
+        category: AndroidNotificationCategory.reminder,
+        audioAttributesUsage: AudioAttributesUsage.alarm,
+      );
+
+      final NotificationDetails briefingDetails = NotificationDetails(
+        android: briefingAndroidDetails,
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+          interruptionLevel: InterruptionLevel.timeSensitive,
+        ),
+      );
+
+      // Schedule Morning Briefing with Daily repeating components
+      await _notifications.zonedSchedule(
+        morningBriefingNotifId,
+        '☀️ Good Morning $userName! — Maid Briefing',
+        'Hey $userName, your daily plan is ready with tasks and schedule. Tap to hear your voice briefing!',
+        tzMorning,
+        briefingDetails,
+        payload: 'daily_briefing_morning',
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        matchDateTimeComponents: DateTimeComponents.time,
+        uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+      );
+
+      // Schedule Evening Briefing with Daily repeating components
+      await _notifications.zonedSchedule(
+        eveningBriefingNotifId,
+        '🌙 Evening Wrap-Up — Maid Briefing',
+        'Hey $userName, Maid here with your nightly task review. Tap to check your remaining pending work!',
+        tzEvening,
+        briefingDetails,
+        payload: 'daily_briefing_evening',
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        matchDateTimeComponents: DateTimeComponents.time,
+        uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+      );
+    } catch (_) {}
+  }
+
   Future<void> cancelNotification(int id) async {
     await _notifications.cancel(id);
   }

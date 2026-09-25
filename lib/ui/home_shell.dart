@@ -18,6 +18,7 @@ import 'screens/notes_screen.dart';
 import 'screens/analytics_screen.dart';
 import 'screens/settings_screen.dart';
 import 'widgets/alarm_ringing_dialog.dart';
+import 'widgets/daily_briefing_dialog.dart';
 import 'widgets/voice_quick_action_fab.dart';
 
 class HomeShell extends StatefulWidget {
@@ -57,6 +58,15 @@ class _HomeShellState extends State<HomeShell> {
     NotificationService.instance.onNotificationClick = (payload) {
       if (payload != null && mounted) {
         final provider = Provider.of<AppProvider>(context, listen: false);
+
+        if (payload == 'daily_briefing_morning') {
+          DailyBriefingDialog.show(context, isEvening: false, autoPlaySpeech: provider.autoSpeakBriefing);
+          return;
+        } else if (payload == 'daily_briefing_evening') {
+          DailyBriefingDialog.show(context, isEvening: true, autoPlaySpeech: provider.autoSpeakBriefing);
+          return;
+        }
+
         final matching = provider.alarms.where((a) => a.id == payload).toList();
         if (matching.isNotEmpty) {
           AlarmRingingDialog.show(context, matching.first);

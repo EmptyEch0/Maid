@@ -1,10 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../../providers/app_provider.dart';
+import '../../engine/note_link_engine.dart';
 import '../../models/app_models.dart';
-import '../widgets/glass_widgets.dart';
+import '../../providers/app_provider.dart';
 import '../widgets/animated_entry.dart';
+import '../widgets/glass_widgets.dart';
+import '../widgets/linked_text_editor.dart';
+import '../widgets/note_graph_modal.dart';
 import '../widgets/universal_reschedule_dialog.dart';
+import 'notes_graph_screen.dart';
 
 class NotesScreen extends StatefulWidget {
   const NotesScreen({super.key});
@@ -38,6 +42,75 @@ class _NotesScreenState extends State<NotesScreen> {
     'Quick List',
   ];
 
+  Color _getCategoryColor(String? category) {
+    return NoteLinkEngine.getCategoryColor(category);
+  }
+
+  IconData _getCategoryIcon(String? category) {
+    return NoteLinkEngine.getCategoryIcon(category, LinkEntityType.note);
+  }
+
+  void _handleLinkTap(BuildContext context, ExtractedLink link) {
+    final provider = Provider.of<AppProvider>(context, listen: false);
+    final allNotes = provider.notes;
+
+    if (link.entityType == LinkEntityType.note) {
+      final targetNote = NoteLinkEngine.findMatchingNote(link.targetName, allNotes);
+      if (targetNote != null) {
+        _showNoteEditorDialog(context, note: targetNote);
+      } else {
+        // Quick Create Prompt
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            title: const Row(
+              children: [
+                Text('✨', style: TextStyle(fontSize: 22)),
+                SizedBox(width: 8),
+                Text('Create Linked Note?'),
+              ],
+            ),
+            content: Text(
+              'Note "${link.targetName}" does not exist yet. Would you like to create it now?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: const Color(0xFF6366F1),
+                ),
+                icon: const Icon(Icons.add_rounded),
+                label: const Text('Create & Open'),
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  final newNote = NoteItem(
+                    id: DateTime.now().millisecondsSinceEpoch.toString(),
+                    title: link.targetName,
+                    body: '',
+                    category: 'General',
+                  );
+                  provider.addNote(newNote);
+                  _showNoteEditorDialog(context, note: newNote);
+                },
+              ),
+            ],
+          ),
+        );
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Linked to ${link.entityType.name.toUpperCase()}: ${link.targetName}'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<AppProvider>(context);
@@ -50,7 +123,7 @@ class _NotesScreenState extends State<NotesScreen> {
     List<NoteItem> filteredNotes = allNotes.where((note) {
       final matchesCategory = _selectedCategory == 'All' ||
           (note.category?.toLowerCase() == _selectedCategory.toLowerCase());
-      
+
       final titleStr = (note.title ?? 'Untitled').toLowerCase();
       final bodyStr = note.body.toLowerCase();
       final query = _searchQuery.trim().toLowerCase();
@@ -67,7 +140,7 @@ class _NotesScreenState extends State<NotesScreen> {
     } else if (_sortBy == 'oldest') {
       filteredNotes.sort((a, b) => a.id.compareTo(b.id));
     } else {
-      // Default: newest first (higher id timestamp or reversed list)
+      // Default: newest first
       filteredNotes.sort((a, b) => b.id.compareTo(a.id));
     }
 
@@ -109,6 +182,12 @@ class _NotesScreenState extends State<NotesScreen> {
           ],
         ),
         actions: [
+          // Mindmap Graph View Trigger (Obsidian-Style)
+          IconButton(
+            icon: const Text('🕸️', style: TextStyle(fontSize: 20)),
+            tooltip: 'Mindmap Knowledge Graph',
+            onPressed: _openGraphScreen,
+          ),
           PopupMenuButton<String>(
             icon: const Icon(Icons.sort_rounded),
             tooltip: 'Sort notes',
@@ -200,32 +279,39 @@ class _NotesScreenState extends State<NotesScreen> {
                 itemBuilder: (context, idx) {
                   final cat = _categories[idx];
                   final isSelected = _selectedCategory == cat;
-                  return ChoiceChip(
-                    label: Text(cat),
+                  final catColor = _getCategoryColor(cat);
+
+                  return FilterChip(
                     selected: isSelected,
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() => _selectedCategory = cat);
-                      }
-                    },
+                    label: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (cat != 'All') ...[
+                          Icon(
+                            _getCategoryIcon(cat),
+                            size: 13,
+                            color: isSelected ? Colors.white : catColor,
+                          ),
+                          const SizedBox(width: 5),
+                        ],
+                        Text(cat),
+                      ],
+                    ),
+                    onSelected: (val) => setState(() => _selectedCategory = cat),
                     selectedColor: const Color(0xFF6366F1),
+                    backgroundColor: isDark
+                        ? Colors.white.withValues(alpha: 0.08)
+                        : Colors.black.withValues(alpha: 0.04),
                     labelStyle: TextStyle(
                       color: isSelected
                           ? Colors.white
-                          : (isDark ? Colors.white70 : Colors.grey.shade800),
-                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                          : (isDark ? Colors.white70 : Colors.black87),
                       fontSize: 12,
+                      fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
                     ),
-                    backgroundColor: isDark
-                        ? Colors.white.withValues(alpha: 0.05)
-                        : Colors.black.withValues(alpha: 0.04),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                      side: BorderSide(
-                        color: isSelected
-                            ? Colors.transparent
-                            : (isDark ? Colors.white12 : Colors.grey.shade300),
-                      ),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    side: BorderSide(
+                      color: isSelected ? const Color(0xFF6366F1) : Colors.transparent,
                     ),
                     showCheckmark: false,
                   );
@@ -233,65 +319,63 @@ class _NotesScreenState extends State<NotesScreen> {
               ),
             ),
 
-            const SizedBox(height: 4),
-
-            // Notes List or Empty State
+            // Note List
             Expanded(
               child: filteredNotes.isEmpty
                   ? Center(
-                      child: Padding(
-                        padding: const EdgeInsets.all(32),
+                      child: SingleChildScrollView(
                         child: Column(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
                             Container(
-                              padding: const EdgeInsets.all(20),
+                              padding: const EdgeInsets.all(24),
                               decoration: BoxDecoration(
                                 color: const Color(0xFF6366F1).withValues(alpha: 0.1),
                                 shape: BoxShape.circle,
                               ),
-                              child: Icon(
-                                _searchQuery.isNotEmpty ? Icons.search_off_rounded : Icons.edit_note_rounded,
+                              child: const Icon(
+                                Icons.note_alt_outlined,
                                 size: 56,
-                                color: const Color(0xFF6366F1),
+                                color: Color(0xFF6366F1),
                               ),
                             ),
                             const SizedBox(height: 16),
                             Text(
                               _searchQuery.isNotEmpty
                                   ? 'No matching notes found'
-                                  : 'No notes yet',
-                              style: TextStyle(
-                                fontSize: 18,
+                                  : (_selectedCategory != 'All'
+                                      ? 'No notes in "$_selectedCategory"'
+                                      : 'No notes created yet'),
+                              style: const TextStyle(
+                                fontSize: 17,
                                 fontWeight: FontWeight.bold,
-                                color: isDark ? Colors.white : Colors.grey.shade900,
                               ),
                             ),
                             const SizedBox(height: 8),
                             Text(
                               _searchQuery.isNotEmpty
-                                  ? 'Try searching with a different title or keyword.'
-                                  : 'Tap + to write your first note (e.g. Shopping, Books, Grocery).',
+                                  ? 'Try searching with different keywords.'
+                                  : 'Tap + to write your first note or type //topic to link ideas into a mindmap.',
                               textAlign: TextAlign.center,
                               style: TextStyle(
-                                fontSize: 14,
+                                fontSize: 13,
                                 color: isDark ? Colors.white60 : Colors.grey.shade600,
                               ),
                             ),
-                            if (_searchQuery.isEmpty) ...[
-                              const SizedBox(height: 20),
-                              ElevatedButton.icon(
-                                onPressed: () => _showNoteEditorDialog(context),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: const Color(0xFF6366F1),
-                                  foregroundColor: Colors.white,
-                                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                            const SizedBox(height: 20),
+                            ElevatedButton.icon(
+                              onPressed: () => _showNoteEditorDialog(context),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF6366F1),
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
                                 ),
-                                icon: const Icon(Icons.add_rounded),
-                                label: const Text('Create a Note'),
                               ),
-                            ],
+                              icon: const Icon(Icons.add_rounded),
+                              label: const Text('Create a Note'),
+                            ),
                           ],
                         ),
                       ),
@@ -302,6 +386,11 @@ class _NotesScreenState extends State<NotesScreen> {
                       itemBuilder: (context, index) {
                         final note = filteredNotes[index];
                         final isUntitled = note.isUntitled;
+
+                        // Calculate links for indicator
+                        final outgoingLinks = NoteLinkEngine.extractLinks(note.body);
+                        final backlinks = NoteLinkEngine.findBacklinks(note, allNotes);
+                        final totalConnections = outgoingLinks.length + backlinks.length;
 
                         return AnimatedEntry(
                           index: index,
@@ -367,6 +456,18 @@ class _NotesScreenState extends State<NotesScreen> {
                                         ],
                                       ),
                                     ),
+                                    // Local Graph Preview Button
+                                    IconButton(
+                                      icon: const Text('🧠', style: TextStyle(fontSize: 16)),
+                                      tooltip: 'View Connected Graph',
+                                      visualDensity: VisualDensity.compact,
+                                      onPressed: () => NoteLocalGraphModal.show(
+                                        context,
+                                        note: note,
+                                        allNotes: allNotes,
+                                        onNavigateToNote: (target) => _showNoteEditorDialog(context, note: target),
+                                      ),
+                                    ),
                                     // Quick Title Rename Button
                                     IconButton(
                                       icon: const Icon(Icons.drive_file_rename_outline_rounded, size: 20),
@@ -396,76 +497,113 @@ class _NotesScreenState extends State<NotesScreen> {
 
                                 const SizedBox(height: 8),
 
-                                // Note Body Preview
+                                // Note Body Preview with Clickable Links
                                 Padding(
                                   padding: const EdgeInsets.only(left: 38),
-                                  child: Text(
-                                    note.body.isNotEmpty ? note.body : '(Empty note content)',
-                                    style: TextStyle(
-                                      color: isDark ? Colors.white70 : Colors.grey.shade700,
-                                      fontSize: 13.5,
-                                      height: 1.4,
-                                    ),
-                                    maxLines: 4,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
+                                  child: note.body.isNotEmpty
+                                      ? LinkedNoteBodyViewer(
+                                          text: note.body,
+                                          maxLines: 4,
+                                          overflow: TextOverflow.ellipsis,
+                                          onLinkTap: (link) => _handleLinkTap(context, link),
+                                        )
+                                      : Text(
+                                          '(Empty note content)',
+                                          style: TextStyle(
+                                            color: isDark ? Colors.white38 : Colors.grey.shade400,
+                                            fontSize: 13.5,
+                                            fontStyle: FontStyle.italic,
+                                          ),
+                                        ),
                                 ),
 
-                                // Chips Row (Category, Date, Time)
-                                if (note.category != null || note.date != null) ...[
-                                  const SizedBox(height: 10),
-                                  Padding(
-                                    padding: const EdgeInsets.only(left: 38),
-                                    child: Wrap(
-                                      spacing: 8,
-                                      runSpacing: 4,
-                                      children: [
-                                        if (note.category != null && note.category!.isNotEmpty)
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                            decoration: BoxDecoration(
-                                              color: _getCategoryColor(note.category).withValues(alpha: 0.12),
-                                              borderRadius: BorderRadius.circular(8),
-                                            ),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                Icon(_getCategoryIcon(note.category), size: 12, color: _getCategoryColor(note.category)),
-                                                const SizedBox(width: 4),
-                                                Text(
-                                                  note.category!,
-                                                  style: TextStyle(
-                                                    fontSize: 11,
-                                                    fontWeight: FontWeight.w600,
-                                                    color: _getCategoryColor(note.category),
-                                                  ),
-                                                ),
-                                              ],
-                                            ),
+                                // Chips Row (Category, Graph Status, Date, Time)
+                                const SizedBox(height: 10),
+                                Padding(
+                                  padding: const EdgeInsets.only(left: 38),
+                                  child: Wrap(
+                                    spacing: 8,
+                                    runSpacing: 4,
+                                    children: [
+                                      if (note.category != null && note.category!.isNotEmpty)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: _getCategoryColor(note.category).withValues(alpha: 0.12),
+                                            borderRadius: BorderRadius.circular(8),
                                           ),
-                                        if (note.date != null && note.date!.isNotEmpty)
-                                          Container(
-                                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                            decoration: BoxDecoration(
-                                              color: isDark ? Colors.white10 : Colors.grey.shade200,
-                                              borderRadius: BorderRadius.circular(8),
-                                            ),
-                                            child: Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                const Icon(Icons.calendar_today_rounded, size: 11, color: Colors.grey),
-                                                const SizedBox(width: 4),
-                                                Text(
-                                                  '${note.date!}${note.startTime != null && note.startTime!.isNotEmpty ? " • ${note.startTime}" : ""}',
-                                                  style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.w600),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(_getCategoryIcon(note.category), size: 12, color: _getCategoryColor(note.category)),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                note.category!,
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: _getCategoryColor(note.category),
                                                 ),
-                                              ],
-                                            ),
+                                              ),
+                                            ],
                                           ),
-                                      ],
-                                    ),
+                                        ),
+
+                                      // Mindmap Connection Badge
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: totalConnections > 0
+                                              ? const Color(0xFF6366F1).withValues(alpha: 0.12)
+                                              : (isDark ? Colors.white10 : Colors.grey.shade200),
+                                          borderRadius: BorderRadius.circular(8),
+                                        ),
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Text(
+                                              totalConnections > 0 ? '🔗' : '🏝️',
+                                              style: const TextStyle(fontSize: 10),
+                                            ),
+                                            const SizedBox(width: 4),
+                                            Text(
+                                              totalConnections > 0
+                                                  ? '$totalConnections connection${totalConnections > 1 ? "s" : ""}'
+                                                  : 'Lone note',
+                                              style: TextStyle(
+                                                fontSize: 11,
+                                                fontWeight: FontWeight.w600,
+                                                color: totalConnections > 0
+                                                    ? const Color(0xFF6366F1)
+                                                    : (isDark ? Colors.white60 : Colors.grey.shade600),
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+
+                                      if (note.date != null && note.date!.isNotEmpty)
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: isDark ? Colors.white10 : Colors.grey.shade200,
+                                            borderRadius: BorderRadius.circular(8),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(Icons.calendar_today_rounded, size: 11, color: Colors.grey),
+                                              const SizedBox(width: 4),
+                                              Text(
+                                                '${note.date!}${note.startTime != null && note.startTime!.isNotEmpty ? " • ${note.startTime}" : ""}',
+                                                style: const TextStyle(fontSize: 11, color: Colors.grey, fontWeight: FontWeight.w600),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                    ],
                                   ),
-                                ],
+                                ),
                               ],
                             ),
                           ),
@@ -484,6 +622,17 @@ class _NotesScreenState extends State<NotesScreen> {
         label: const Text('New Note', style: TextStyle(fontWeight: FontWeight.bold)),
       ),
     );
+  }
+
+  Future<void> _openGraphScreen() async {
+    final selectedNote = await Navigator.push<NoteItem?>(
+      context,
+      MaterialPageRoute(builder: (_) => const NotesGraphScreen()),
+    );
+    if (!mounted) return;
+    if (selectedNote != null) {
+      _showNoteEditorDialog(context, note: selectedNote);
+    }
   }
 
   // --- Quick Title Rename Dialog ---
@@ -632,13 +781,16 @@ class _NotesScreenState extends State<NotesScreen> {
     );
   }
 
-  // --- Full Note Creator / Editor Modal ---
+  // --- Full Note Creator / Editor Modal with Linking & Graph ---
   void _showNoteEditorDialog(BuildContext context, {NoteItem? note}) {
     final titleController = TextEditingController(text: note?.isUntitled == true ? '' : note?.title);
-    final bodyController = TextEditingController(text: note?.body);
+    final bodyController = LinkedTextEditingController(text: note?.body);
     final dateController = TextEditingController(text: note?.date);
     final startTimeController = TextEditingController(text: note?.startTime);
     String selectedCategory = note?.category ?? 'General';
+
+    String linkQuery = '';
+    bool showAutocomplete = false;
 
     showModalBottomSheet(
       context: context,
@@ -651,6 +803,12 @@ class _NotesScreenState extends State<NotesScreen> {
         return StatefulBuilder(
           builder: (modalCtx, setModalState) {
             final isDark = Theme.of(context).brightness == Brightness.dark;
+            final provider = Provider.of<AppProvider>(context, listen: false);
+            final allNotes = provider.notes;
+
+            // Check outgoing and backlinks for this note
+            final outgoingLinks = NoteLinkEngine.extractLinks(bodyController.text);
+            final backlinks = note != null ? NoteLinkEngine.findBacklinks(note, allNotes) : <NoteItem>[];
 
             return Padding(
               padding: EdgeInsets.only(
@@ -681,6 +839,39 @@ class _NotesScreenState extends State<NotesScreen> {
                           style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                         ),
                         const Spacer(),
+                        if (note != null) ...[
+                          // Mini Graph Button
+                          IconButton(
+                            icon: const Text('🧠', style: TextStyle(fontSize: 20)),
+                            tooltip: 'Local Knowledge Map',
+                            onPressed: () {
+                              NoteLocalGraphModal.show(
+                                context,
+                                note: note,
+                                allNotes: allNotes,
+                                onNavigateToNote: (target) {
+                                  Navigator.pop(ctx);
+                                  _showNoteEditorDialog(context, note: target);
+                                },
+                              );
+                            },
+                          ),
+                          IconButton(
+                            icon: const Text('🕸️', style: TextStyle(fontSize: 20)),
+                            tooltip: 'Explore Full Graph',
+                            onPressed: () {
+                              Navigator.pop(ctx);
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => NotesGraphScreen(
+                                    initialFocusNoteId: note.id,
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ],
                         IconButton(
                           icon: const Icon(Icons.close_rounded),
                           onPressed: () => Navigator.pop(ctx),
@@ -741,18 +932,184 @@ class _NotesScreenState extends State<NotesScreen> {
 
                     const SizedBox(height: 14),
 
-                    // Body Field
+                    // Autocomplete suggestion strip when typing // or [[
+                    if (showAutocomplete)
+                      NoteAutocompleteStrip(
+                        query: linkQuery,
+                        existingNotes: allNotes,
+                        onSuggestionSelected: (selectedTitle, type) {
+                          setModalState(() {
+                            final currentText = bodyController.text;
+                            final cursor = bodyController.selection.baseOffset;
+                            
+                            // Replace partial trigger with completed //link
+                            final lastSlash = currentText.lastIndexOf('//', cursor > 0 ? cursor - 1 : 0);
+                            final lastWiki = currentText.lastIndexOf('[[', cursor > 0 ? cursor - 1 : 0);
+                            final triggerPos = lastSlash > lastWiki ? lastSlash : lastWiki;
+
+                            if (triggerPos != -1) {
+                              final before = currentText.substring(0, triggerPos);
+                              final after = cursor <= currentText.length ? currentText.substring(cursor) : '';
+                              final insertText = '//$selectedTitle ';
+                              bodyController.text = '$before$insertText$after';
+                              bodyController.selection = TextSelection.fromPosition(
+                                TextPosition(offset: (before + insertText).length),
+                              );
+                            } else {
+                              bodyController.text = '$currentText //$selectedTitle ';
+                            }
+                            showAutocomplete = false;
+                          });
+                        },
+                      ),
+
+                    // Body Field with Real-Time Link Highlighting
                     TextField(
                       controller: bodyController,
                       maxLines: 5,
                       textCapitalization: TextCapitalization.sentences,
+                      onChanged: (val) {
+                        final cursor = bodyController.selection.baseOffset;
+                        if (cursor > 0) {
+                          final textBeforeCursor = val.substring(0, cursor);
+                          final slashIdx = textBeforeCursor.lastIndexOf('//');
+                          final wikiIdx = textBeforeCursor.lastIndexOf('[[');
+
+                          final lastTrigger = slashIdx > wikiIdx ? slashIdx : wikiIdx;
+                          if (lastTrigger != -1 && (cursor - lastTrigger) <= 25) {
+                            final q = textBeforeCursor.substring(lastTrigger + (slashIdx > wikiIdx ? 2 : 2));
+                            if (!q.contains('\n') && !q.contains('  ')) {
+                              setModalState(() {
+                                linkQuery = q;
+                                showAutocomplete = true;
+                              });
+                              return;
+                            }
+                          }
+                        }
+                        if (showAutocomplete) {
+                          setModalState(() => showAutocomplete = false);
+                        }
+                      },
                       decoration: InputDecoration(
                         labelText: 'Note Content...',
-                        hintText: 'e.g. books, pens, notebook, milk, bread...',
+                        hintText: 'Type //topic or [[topic]] to link notes into a Mindmap...',
                         alignLabelWithHint: true,
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
                       ),
                     ),
+
+                    const SizedBox(height: 6),
+
+                    // Helpful Hint / Trigger Shortcuts
+                    Row(
+                      children: [
+                        const Icon(Icons.info_outline_rounded, size: 13, color: Color(0xFF6366F1)),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            'Type //topic, //task:Name, or //dsa:Topic to connect ideas.',
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: isDark ? const Color(0xFF94A3B8) : const Color(0xFF64748B),
+                            ),
+                          ),
+                        ),
+                        TextButton(
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(horizontal: 6),
+                            visualDensity: VisualDensity.compact,
+                          ),
+                          onPressed: () {
+                            setModalState(() {
+                              final text = bodyController.text;
+                              bodyController.text = '$text //';
+                              bodyController.selection = TextSelection.fromPosition(
+                                TextPosition(offset: bodyController.text.length),
+                              );
+                              linkQuery = '';
+                              showAutocomplete = true;
+                            });
+                          },
+                          child: const Text('+ Add //Link', style: TextStyle(fontSize: 11.5, fontWeight: FontWeight.bold)),
+                        ),
+                      ],
+                    ),
+
+                    // Backlinks & Mentioned Notes List (if editing an existing note)
+                    if (backlinks.isNotEmpty || outgoingLinks.isNotEmpty) ...[
+                      const SizedBox(height: 10),
+                      Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: isDark ? Colors.white.withValues(alpha: 0.04) : Colors.black.withValues(alpha: 0.02),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: isDark ? Colors.white10 : Colors.black.withValues(alpha: 0.05),
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (outgoingLinks.isNotEmpty) ...[
+                              Row(
+                                children: [
+                                  const Icon(Icons.arrow_outward_rounded, size: 14, color: Color(0xFF6366F1)),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Mentions (${outgoingLinks.length})',
+                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 4,
+                                children: outgoingLinks.map((l) {
+                                  return ActionChip(
+                                    padding: EdgeInsets.zero,
+                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    label: Text(l.targetName, style: const TextStyle(fontSize: 11)),
+                                    onPressed: () => _handleLinkTap(context, l),
+                                  );
+                                }).toList(),
+                              ),
+                            ],
+                            if (backlinks.isNotEmpty) ...[
+                              if (outgoingLinks.isNotEmpty) const SizedBox(height: 8),
+                              Row(
+                                children: [
+                                  const Icon(Icons.south_west_rounded, size: 14, color: Color(0xFF10B981)),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Referenced by (${backlinks.length})',
+                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF10B981)),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 4),
+                              Wrap(
+                                spacing: 6,
+                                runSpacing: 4,
+                                children: backlinks.map((bl) {
+                                  return ActionChip(
+                                    padding: EdgeInsets.zero,
+                                    materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                    avatar: const Icon(Icons.link_rounded, size: 12, color: Color(0xFF10B981)),
+                                    label: Text(bl.displayTitle, style: const TextStyle(fontSize: 11)),
+                                    onPressed: () {
+                                      Navigator.pop(ctx);
+                                      _showNoteEditorDialog(context, note: bl);
+                                    },
+                                  );
+                                }).toList(),
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
 
                     const SizedBox(height: 14),
 
@@ -880,7 +1237,6 @@ class _NotesScreenState extends State<NotesScreen> {
                           final body = bodyController.text.trim();
                           final rawTitle = titleController.text.trim();
 
-                          // If both title and body are completely empty, don't save
                           if (body.isEmpty && rawTitle.isEmpty) {
                             ScaffoldMessenger.of(context).showSnackBar(
                               const SnackBar(
@@ -891,9 +1247,7 @@ class _NotesScreenState extends State<NotesScreen> {
                             return;
                           }
 
-                          // Auto-fallback to "Untitled" if title is empty
                           final finalTitle = rawTitle.isEmpty ? 'Untitled' : rawTitle;
-
                           final provider = Provider.of<AppProvider>(context, listen: false);
                           final newNote = NoteItem(
                             id: note?.id ?? DateTime.now().millisecondsSinceEpoch.toString(),
@@ -930,43 +1284,5 @@ class _NotesScreenState extends State<NotesScreen> {
         );
       },
     );
-  }
-
-  // --- Category Color Helper ---
-  Color _getCategoryColor(String? category) {
-    switch (category?.toLowerCase()) {
-      case 'shopping':
-      case 'grocery':
-        return const Color(0xFF10B981);
-      case 'study':
-        return const Color(0xFF6366F1);
-      case 'work':
-        return Colors.blue;
-      case 'personal':
-        return Colors.purple;
-      case 'ideas':
-        return Colors.amber.shade700;
-      default:
-        return const Color(0xFF6366F1);
-    }
-  }
-
-  // --- Category Icon Helper ---
-  IconData _getCategoryIcon(String? category) {
-    switch (category?.toLowerCase()) {
-      case 'shopping':
-      case 'grocery':
-        return Icons.shopping_bag_rounded;
-      case 'study':
-        return Icons.menu_book_rounded;
-      case 'work':
-        return Icons.business_center_rounded;
-      case 'personal':
-        return Icons.person_rounded;
-      case 'ideas':
-        return Icons.lightbulb_rounded;
-      default:
-        return Icons.sticky_note_2_rounded;
-    }
   }
 }

@@ -6,6 +6,7 @@ import '../../providers/app_provider.dart';
 import '../../services/database_helper.dart';
 import '../widgets/glass_widgets.dart';
 import '../widgets/animated_entry.dart';
+import '../widgets/daily_briefing_dialog.dart';
 import '../widgets/universal_reschedule_dialog.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -333,9 +334,201 @@ class SettingsScreen extends StatelessWidget {
 
           const SizedBox(height: 12),
 
-          // APPEARANCE & GLASSMORPHIC THEME MANAGER
+          // DAILY BRIEFINGS & AUTO-TRIGGER ASSISTANT
           AnimatedEntry(
             index: 2,
+            child: GlassCard(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF59E0B).withValues(alpha: 0.15),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: const Text('☀️', style: TextStyle(fontSize: 20)),
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        'Daily Briefings & Voice Wake',
+                        style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Receive scheduled notifications and voice speech briefings for your daily plan and remaining tasks.',
+                    style: TextStyle(fontSize: 12, color: isDark ? Colors.white60 : Colors.grey.shade600),
+                  ),
+                  const SizedBox(height: 16),
+
+                  // User Name Field
+                  TextField(
+                    controller: TextEditingController(text: provider.userName),
+                    decoration: InputDecoration(
+                      labelText: 'Your Name (Maid will greet you with this)',
+                      hintText: 'e.g. Likhith',
+                      prefixIcon: const Icon(Icons.person_outline_rounded, color: Color(0xFF6366F1)),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                    ),
+                    onSubmitted: (val) => provider.setUserName(val),
+                  ),
+                  const SizedBox(height: 14),
+
+                  // Daily Briefings Toggle
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Enable Daily Briefings', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                    subtitle: const Text('Scheduled 9:00 AM Morning Plan & 8:00 PM Nightly Wrap-Up notifications', style: TextStyle(fontSize: 11)),
+                    value: provider.dailyBriefingEnabled,
+                    activeThumbColor: const Color(0xFF6366F1),
+                    onChanged: (val) => provider.setDailyBriefingEnabled(val),
+                  ),
+
+                  if (provider.dailyBriefingEnabled) ...[
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(14),
+                            onTap: () async {
+                              final currentParts = provider.morningBriefingTime.split(':');
+                              final picked = await showTimePicker(
+                                context: context,
+                                initialTime: TimeOfDay(
+                                  hour: int.tryParse(currentParts[0]) ?? 9,
+                                  minute: currentParts.length > 1 ? int.tryParse(currentParts[1]) ?? 0 : 0,
+                                ),
+                              );
+                              if (picked != null) {
+                                final timeStr = '${picked.hour.toString().padLeft(2, "0")}:${picked.minute.toString().padLeft(2, "0")}';
+                                provider.setMorningBriefingTime(timeStr);
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF59E0B).withValues(alpha: isDark ? 0.12 : 0.08),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: const Color(0xFFF59E0B).withValues(alpha: 0.3)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('☀️ Morning Plan', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFF59E0B))),
+                                  const SizedBox(height: 4),
+                                  Text(provider.morningBriefingTime, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(14),
+                            onTap: () async {
+                              final currentParts = provider.eveningBriefingTime.split(':');
+                              final picked = await showTimePicker(
+                                context: context,
+                                initialTime: TimeOfDay(
+                                  hour: int.tryParse(currentParts[0]) ?? 20,
+                                  minute: currentParts.length > 1 ? int.tryParse(currentParts[1]) ?? 0 : 0,
+                                ),
+                              );
+                              if (picked != null) {
+                                final timeStr = '${picked.hour.toString().padLeft(2, "0")}:${picked.minute.toString().padLeft(2, "0")}';
+                                provider.setEveningBriefingTime(timeStr);
+                              }
+                            },
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF8B5CF6).withValues(alpha: isDark ? 0.12 : 0.08),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(color: const Color(0xFF8B5CF6).withValues(alpha: 0.3)),
+                              ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text('🌙 Evening Review', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF8B5CF6))),
+                                  const SizedBox(height: 4),
+                                  Text(provider.eveningBriefingTime, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+
+                  const Divider(height: 24),
+
+                  // Auto Speak Briefing on Notification / Launch
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Auto-Speak Voice Briefing', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                    subtitle: const Text('Automatically read aloud tasks and events when briefing opens', style: TextStyle(fontSize: 11)),
+                    value: provider.autoSpeakBriefing,
+                    activeThumbColor: const Color(0xFF6366F1),
+                    onChanged: (val) => provider.setAutoSpeakBriefing(val),
+                  ),
+
+                  // Wake Word "Hey Maid" Auto-Trigger
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('"Hey Maid" Voice Auto-Trigger', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                    subtitle: const Text('Always listen for "Hey Maid" to automatically wake assistant and speak your plan', style: TextStyle(fontSize: 11)),
+                    value: provider.wakeWordAutoTriggerEnabled,
+                    activeThumbColor: const Color(0xFF10B981),
+                    onChanged: (val) => provider.setWakeWordAutoTriggerEnabled(val),
+                  ),
+
+                  const SizedBox(height: 10),
+
+                  // Live Preview Buttons
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          icon: const Text('☀️', style: TextStyle(fontSize: 14)),
+                          label: const Text('Test Morning', style: TextStyle(fontSize: 11.5)),
+                          onPressed: () => DailyBriefingDialog.show(context, isEvening: false, autoPlaySpeech: true),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 10),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          icon: const Text('🌙', style: TextStyle(fontSize: 14)),
+                          label: const Text('Test Evening', style: TextStyle(fontSize: 11.5)),
+                          onPressed: () => DailyBriefingDialog.show(context, isEvening: true, autoPlaySpeech: true),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // APPEARANCE & GLASSMORPHIC THEME MANAGER
+          AnimatedEntry(
+            index: 3,
             child: GlassCard(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

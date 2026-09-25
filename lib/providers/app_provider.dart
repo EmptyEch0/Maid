@@ -14,6 +14,8 @@ import '../services/alarm_service.dart';
 import '../services/alarm_sound_service.dart';
 import '../services/permission_service.dart';
 import '../services/speech_service.dart';
+import '../services/tts_service.dart';
+import '../engine/local_query_engine.dart';
 
 class AppProvider extends ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.dark;
@@ -58,11 +60,25 @@ class AppProvider extends ChangeNotifier {
 
   final Map<String, List<ChecklistItem>> _checklists = {};
 
+  String _userName = 'Likhith';
+  bool _dailyBriefingEnabled = true;
+  String _morningBriefingTime = '09:00';
+  String _eveningBriefingTime = '20:00';
+  bool _wakeWordAutoTriggerEnabled = false;
+  bool _autoSpeakBriefing = true;
+
   // Getters
   ThemeMode get themeMode => _themeMode;
   bool get isUnlocked => _isUnlocked;
   bool get isPinSet => _isPinSet;
   DateTime get selectedDate => _selectedDate;
+
+  String get userName => _userName;
+  bool get dailyBriefingEnabled => _dailyBriefingEnabled;
+  String get morningBriefingTime => _morningBriefingTime;
+  String get eveningBriefingTime => _eveningBriefingTime;
+  bool get wakeWordAutoTriggerEnabled => _wakeWordAutoTriggerEnabled;
+  bool get autoSpeakBriefing => _autoSpeakBriefing;
 
   List<CalendarEvent> get events => _events;
   List<RecurrenceRule> get recurrenceRules => _recurrenceRules;
@@ -124,6 +140,14 @@ class AppProvider extends ChangeNotifier {
       } catch (_) {}
     }
 
+    // Load user & briefing settings
+    _userName = prefs.getString('user_name') ?? 'Likhith';
+    _dailyBriefingEnabled = prefs.getBool('daily_briefing_enabled') ?? true;
+    _morningBriefingTime = prefs.getString('morning_briefing_time') ?? '09:00';
+    _eveningBriefingTime = prefs.getString('evening_briefing_time') ?? '20:00';
+    _wakeWordAutoTriggerEnabled = prefs.getBool('wake_word_auto_trigger') ?? false;
+    _autoSpeakBriefing = prefs.getBool('auto_speak_briefing') ?? true;
+
     await NotificationService.instance.init();
     await WidgetUpdateService.instance.init();
     await refreshData();
@@ -135,9 +159,16 @@ class AppProvider extends ChangeNotifier {
   void _warmupBackgroundServices() async {
     try {
       await NotificationService.instance.syncAllAlarms(_alarms);
+      await syncDailyBriefingSchedule();
       AlarmService.instance.startMonitoring(() => _alarms);
       await PermissionService.instance.requestAllAppPermissions();
       await SpeechService.instance.init();
+      if (_wakeWordAutoTriggerEnabled) {
+        SpeechService.instance.startWakeWordMonitoring(onQuery: (query) async {
+          final result = await LocalQueryEngine.processQuery(query, this);
+          await TtsService.instance.speak(result.spokenText);
+        });
+      }
     } catch (_) {}
   }
 
@@ -632,6 +663,120 @@ class AppProvider extends ChangeNotifier {
     await DatabaseHelper.instance.insertChecklistItem(updated);
     await getChecklist(item.parentId);
     notifyListeners();
+  }
+
+  // --- DAILY BRIEFING & VOICE WAKE SETTINGS ---
+  Future<void> setUserName(String name) async {
+    _userName = name.trim().isEmpty ? 'Likhith' : name.trim();
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('user_name', _userName);
+    await syncDailyBriefingSchedule();
+    notifyListeners();
+  }
+
+  Future<void> setDailyBriefingEnabled(bool enabled) async {
+    _dailyBriefingEnabled = enabled;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('daily_briefing_enabled', enabled);
+    await syncDailyBriefingSchedule();
+    notifyListeners();
+  }
+
+  Future<void> setMorningBriefingTime(String time) async {
+    _morningBriefingTime = time;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('morning_briefing_time', time);
+    await syncDailyBriefingSchedule();
+    notifyListeners();
+  }
+
+  Future<void> setEveningBriefingTime(String time) async {
+    _eveningBriefingTime = time;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('evening_briefing_time', time);
+    await syncDailyBriefingSchedule();
+    notifyListeners();
+  }
+
+  Future<void> setWakeWordAutoTriggerEnabled(bool enabled) async {
+    _wakeWordAutoTriggerEnabled = enabled;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('wake_word_auto_trigger', enabled);
+    if (enabled) {
+      SpeechService.instance.startWakeWordMonitoring(onQuery: (query) async {
+        final result = await LocalQueryEngine.processQuery(query, this);
+        await TtsService.instance.speak(result.spokenText);
+      });
+    } else {
+      SpeechService.instance.stop();
+    }
+    notifyListeners();
+  }
+
+  Future<void> setAutoSpeakBriefing(bool enabled) async {
+    _autoSpeakBriefing = enabled;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('auto_speak_briefing', enabled);
+    notifyListeners();
+  }
+
+  Future<void> syncDailyBriefingSchedule() async {
+    await NotificationService.instance.scheduleDailyBriefings(
+      enabled: _dailyBriefingEnabled,
+      morningTime: _morningBriefingTime,
+      eveningTime: _eveningBriefingTime,
+      userName: _userName,
+      pendingTasksCount: pendingTodayTasks.length,
+      todayEventsCount: getResolvedSchedule(selectedDateStr).length,
+    );
+  }
+
+  String generateDailyBriefingSpeech({bool isEvening = false}) {
+    final now = DateTime.now();
+    final todayStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final allTasks = _tasks;
+    final pendingTasks = allTasks.where((t) {
+      final isDueTodayOrUnset = t.dueDate == null || t.dueDate == todayStr;
+      return isDueTodayOrUnset && t.status != 'completed';
+    }).toList();
+
+    final todaySlots = getResolvedSchedule(todayStr);
+
+    final buffer = StringBuffer();
+    if (!isEvening) {
+      buffer.write('Hey $_userName, good morning! Here is your daily plan from Maid. ');
+      if (pendingTasks.isEmpty && todaySlots.isEmpty) {
+        buffer.write('You have no pending tasks or events for today. Enjoy your day!');
+      } else {
+        if (pendingTasks.isNotEmpty) {
+          final highPriority = pendingTasks.where((t) => t.priority == 3).toList();
+          if (highPriority.isNotEmpty) {
+            buffer.write('You have ${highPriority.length} high priority ${highPriority.length == 1 ? "task" : "tasks"}: ${highPriority.map((t) => t.title).join(", ")}. ');
+          }
+          final taskListStr = pendingTasks.take(4).map((t) => t.title).join(', ');
+          buffer.write('Overall, you have ${pendingTasks.length} pending ${pendingTasks.length == 1 ? "task" : "tasks"} today: $taskListStr. ');
+        } else {
+          buffer.write('All your tasks for today are already completed! ');
+        }
+
+        if (todaySlots.isNotEmpty) {
+          final eventStr = todaySlots.take(3).map((s) => '${s.title} at ${s.startTime}').join(', ');
+          buffer.write('You also have ${todaySlots.length} scheduled ${todaySlots.length == 1 ? "routine" : "routines"}: $eventStr. ');
+        }
+        buffer.write("Let's stay focused and make today productive!");
+      }
+    } else {
+      buffer.write('Hey $_userName, good evening! Maid here with your nightly wrap-up. ');
+      if (pendingTasks.isEmpty) {
+        buffer.write('Congratulations! You have completed all of your tasks today. Have a relaxing evening!');
+      } else {
+        final taskListStr = pendingTasks.take(4).map((t) => t.title).join(', ');
+        buffer.write('You still have ${pendingTasks.length} remaining ${pendingTasks.length == 1 ? "task" : "tasks"}: $taskListStr. ');
+        buffer.write('Great effort today! Rest well and keep up the momentum.');
+      }
+    }
+
+    return buffer.toString();
   }
 
   // --- WEEKLY REVIEW ---
