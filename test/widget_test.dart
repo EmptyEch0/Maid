@@ -1,20 +1,27 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:provider/provider.dart';
-import 'package:maid/main.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:maid/ui/screens/voice_assistant_screen.dart';
 import 'package:maid/providers/app_provider.dart';
+import 'package:provider/provider.dart';
 
 void main() {
-  testWidgets('MaidApp smoke test with AppProvider', (WidgetTester tester) async {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  SharedPreferences.setMockInitialValues({});
+
+  testWidgets('VoiceAssistantScreen renders correctly with Stop Voice controls', (WidgetTester tester) async {
     final appProvider = AppProvider();
 
     await tester.pumpWidget(
       ChangeNotifierProvider.value(
         value: appProvider,
-        child: const MaidApp(),
+        child: const MaterialApp(
+          home: VoiceAssistantScreen(),
+        ),
       ),
     );
 
-    expect(find.byType(MaterialApp), findsOneWidget);
+    expect(find.text('Maid Voice Assistant'), findsOneWidget);
+    expect(find.text('Stop Audio'), findsOneWidget);
   });
 }

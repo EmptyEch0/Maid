@@ -104,6 +104,24 @@ class RecurrenceRule {
     };
   }
 
+  RecurrenceRule copyWith({
+    String? id,
+    String? title,
+    String? daysOfWeek,
+    String? startTime,
+    String? endTime,
+    String? category,
+  }) {
+    return RecurrenceRule(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      daysOfWeek: daysOfWeek ?? this.daysOfWeek,
+      startTime: startTime ?? this.startTime,
+      endTime: endTime ?? this.endTime,
+      category: category ?? this.category,
+    );
+  }
+
   factory RecurrenceRule.fromMap(Map<String, dynamic> map) {
     return RecurrenceRule(
       id: map['id'] as String,

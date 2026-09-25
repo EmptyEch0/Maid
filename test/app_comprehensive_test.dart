@@ -7,6 +7,8 @@ import 'package:maid/engine/nlp_parser_engine.dart';
 import 'package:maid/engine/weekly_review_engine.dart';
 import 'package:maid/engine/dsa_plan_seeder.dart';
 import 'package:maid/engine/local_query_engine.dart';
+import 'package:maid/services/speech_service.dart';
+import 'package:maid/services/tts_service.dart';
 import 'package:maid/providers/app_provider.dart';
 
 void main() {
@@ -357,6 +359,74 @@ void main() {
       expect(fromMap.body, 'books, pens, groceries');
       expect(fromMap.date, '2026-08-20');
       expect(fromMap.startTime, '10:00');
+    });
+  });
+
+  group('6. Voice Stop & Silence Command Control Tests', () {
+    test('Detects single-word and natural language stop phrases correctly', () {
+      expect(SpeechService.isStopCommand('stop'), true);
+      expect(SpeechService.isStopCommand('STOP'), true);
+      expect(SpeechService.isStopCommand('stop it'), true);
+      expect(SpeechService.isStopCommand('stop now'), true);
+      expect(SpeechService.isStopCommand('stop talking'), true);
+      expect(SpeechService.isStopCommand('stop speaking'), true);
+      expect(SpeechService.isStopCommand('stop reading'), true);
+      expect(SpeechService.isStopCommand('shut up'), true);
+      expect(SpeechService.isStopCommand('be quiet'), true);
+      expect(SpeechService.isStopCommand('quiet'), true);
+      expect(SpeechService.isStopCommand('silence'), true);
+      expect(SpeechService.isStopCommand('mute'), true);
+      expect(SpeechService.isStopCommand('cancel'), true);
+      expect(SpeechService.isStopCommand('abort'), true);
+      expect(SpeechService.isStopCommand('nevermind'), true);
+      expect(SpeechService.isStopCommand('pause'), true);
+    });
+
+    test('Detects wake-word prefixed and combined stop commands', () {
+      expect(SpeechService.isStopCommand('hey maid stop'), true);
+      expect(SpeechService.isStopCommand('maid stop'), true);
+      expect(SpeechService.isStopCommand('ok maid stop'), true);
+      expect(SpeechService.isStopCommand('hi maid stop'), true);
+      expect(SpeechService.isStopCommand('maid shut up'), true);
+      expect(SpeechService.isStopCommand('hey maid shut up'), true);
+      expect(SpeechService.isStopCommand('maid be quiet'), true);
+      expect(SpeechService.isStopCommand('maid quiet'), true);
+      expect(SpeechService.isStopCommand('maid silence'), true);
+      expect(SpeechService.isStopCommand('stop maid'), true);
+      expect(SpeechService.isStopCommand('hey maid: stop'), true);
+    });
+
+    test('Non-stop queries are not falsely identified as stop', () {
+      expect(SpeechService.isStopCommand('tell my work'), false);
+      expect(SpeechService.isStopCommand('what is today task'), false);
+      expect(SpeechService.isStopCommand('set alarm for 7am'), false);
+      expect(SpeechService.isStopCommand('add task stop by grocery store'), false);
+      expect(SpeechService.isStopCommand(''), false);
+    });
+
+    test('LocalQueryEngine immediately stops playback and returns empty spokenText on stop command', () async {
+      final provider = AppProvider();
+
+      final result1 = await LocalQueryEngine.processQuery('stop', provider);
+      expect(result1.intentType, 'stop');
+      expect(result1.spokenText, '');
+      expect(result1.displayText.contains('Stopped & Silenced'), true);
+
+      final result2 = await LocalQueryEngine.processQuery('hey maid stop', provider);
+      expect(result2.intentType, 'stop');
+      expect(result2.spokenText, '');
+
+      final result3 = await LocalQueryEngine.processQuery('shut up', provider);
+      expect(result3.intentType, 'stop');
+      expect(result3.spokenText, '');
+
+      final result4 = await LocalQueryEngine.processQuery('be quiet', provider);
+      expect(result4.intentType, 'stop');
+      expect(result4.spokenText, '');
+
+      final result5 = await LocalQueryEngine.processQuery('maid stop', provider);
+      expect(result5.intentType, 'stop');
+      expect(result5.spokenText, '');
     });
   });
 }

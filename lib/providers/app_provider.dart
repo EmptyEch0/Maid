@@ -62,10 +62,11 @@ class AppProvider extends ChangeNotifier {
 
   String _userName = 'Likhith';
   bool _dailyBriefingEnabled = true;
-  String _morningBriefingTime = '09:00';
-  String _eveningBriefingTime = '20:00';
+  String _morningBriefingTime = '08:00';
+  String _eveningBriefingTime = '21:00';
   bool _wakeWordAutoTriggerEnabled = false;
   bool _autoSpeakBriefing = true;
+  bool _vibrationEnabled = true;
 
   // Getters
   ThemeMode get themeMode => _themeMode;
@@ -79,6 +80,7 @@ class AppProvider extends ChangeNotifier {
   String get eveningBriefingTime => _eveningBriefingTime;
   bool get wakeWordAutoTriggerEnabled => _wakeWordAutoTriggerEnabled;
   bool get autoSpeakBriefing => _autoSpeakBriefing;
+  bool get vibrationEnabled => _vibrationEnabled;
 
   List<CalendarEvent> get events => _events;
   List<RecurrenceRule> get recurrenceRules => _recurrenceRules;
@@ -143,10 +145,11 @@ class AppProvider extends ChangeNotifier {
     // Load user & briefing settings
     _userName = prefs.getString('user_name') ?? 'Likhith';
     _dailyBriefingEnabled = prefs.getBool('daily_briefing_enabled') ?? true;
-    _morningBriefingTime = prefs.getString('morning_briefing_time') ?? '09:00';
-    _eveningBriefingTime = prefs.getString('evening_briefing_time') ?? '20:00';
+    _morningBriefingTime = prefs.getString('morning_briefing_time') ?? '08:00';
+    _eveningBriefingTime = prefs.getString('evening_briefing_time') ?? '21:00';
     _wakeWordAutoTriggerEnabled = prefs.getBool('wake_word_auto_trigger') ?? false;
     _autoSpeakBriefing = prefs.getBool('auto_speak_briefing') ?? true;
+    _vibrationEnabled = prefs.getBool('vibration_enabled') ?? true;
 
     await NotificationService.instance.init();
     await WidgetUpdateService.instance.init();
@@ -158,16 +161,23 @@ class AppProvider extends ChangeNotifier {
 
   void _warmupBackgroundServices() async {
     try {
-      await NotificationService.instance.syncAllAlarms(_alarms);
+      await NotificationService.instance.syncAllAlarms(_alarms, enableVibration: _vibrationEnabled);
       await syncDailyBriefingSchedule();
       AlarmService.instance.startMonitoring(() => _alarms);
       await PermissionService.instance.requestAllAppPermissions();
       await SpeechService.instance.init();
       if (_wakeWordAutoTriggerEnabled) {
-        SpeechService.instance.startWakeWordMonitoring(onQuery: (query) async {
-          final result = await LocalQueryEngine.processQuery(query, this);
-          await TtsService.instance.speak(result.spokenText);
-        });
+        SpeechService.instance.startWakeWordMonitoring(
+          onQuery: (query) async {
+            final result = await LocalQueryEngine.processQuery(query, this);
+            if (result.spokenText.isNotEmpty) {
+              await TtsService.instance.speak(result.spokenText);
+            }
+          },
+          onStop: () async {
+            await TtsService.instance.stop();
+          },
+        );
       }
     } catch (_) {}
   }
@@ -200,39 +210,15 @@ class AppProvider extends ChangeNotifier {
     _inboxItems = await db.getInboxItems();
     _alarms = await db.getAlarms();
     _habits = await db.getHabits();
-    _syncWidget();
-    notifyListeners();
-  }
 
-  void _syncWidget() {
-    WidgetUpdateService.instance.updateTodoWidget(
+    // Sync Android Home Widget data with today's live stats
+    await WidgetUpdateService.instance.updateTodoWidget(
       tasks: _tasks,
       events: _events,
       recurrenceRules: _recurrenceRules,
       exceptions: _exceptions,
     );
-  }
 
-  void toggleTheme() async {
-    _themeMode = _themeMode == ThemeMode.dark ? ThemeMode.light : ThemeMode.dark;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('theme_mode', _themeMode == ThemeMode.dark ? 'dark' : 'light');
-    await prefs.setBool('is_dark_mode', _themeMode == ThemeMode.dark);
-    notifyListeners();
-  }
-
-  void setThemeMode(ThemeMode mode) async {
-    _themeMode = mode;
-    final prefs = await SharedPreferences.getInstance();
-    if (mode == ThemeMode.light) {
-      await prefs.setString('theme_mode', 'light');
-      await prefs.setBool('is_dark_mode', false);
-    } else if (mode == ThemeMode.dark) {
-      await prefs.setString('theme_mode', 'dark');
-      await prefs.setBool('is_dark_mode', true);
-    } else {
-      await prefs.setString('theme_mode', 'system');
-    }
     notifyListeners();
   }
 
@@ -241,10 +227,43 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  // --- SECURITY LOCK ---
-  bool verifyPin(String pin) {
-    final hash = sha256.convert(utf8.encode(pin)).toString();
-    if (hash == _pinHash) {
+  Future<void> setThemeMode(ThemeMode mode) async {
+    _themeMode = mode;
+    final prefs = await SharedPreferences.getInstance();
+    if (mode == ThemeMode.light) {
+      await prefs.setString('theme_mode', 'light');
+    } else if (mode == ThemeMode.dark) {
+      await prefs.setString('theme_mode', 'dark');
+    } else {
+      await prefs.setString('theme_mode', 'system');
+    }
+    notifyListeners();
+  }
+
+  Future<void> toggleTheme() async {
+    if (_themeMode == ThemeMode.dark) {
+      await setThemeMode(ThemeMode.light);
+    } else {
+      await setThemeMode(ThemeMode.dark);
+    }
+  }
+
+  // --- PIN LOCK ---
+  String _hashPin(String pin) {
+    return sha256.convert(utf8.encode(pin)).toString();
+  }
+
+  Future<void> setPin(String pin) async {
+    final prefs = await SharedPreferences.getInstance();
+    _pinHash = _hashPin(pin);
+    await prefs.setString('pin_hash', _pinHash!);
+    _isPinSet = true;
+    _isUnlocked = true;
+    notifyListeners();
+  }
+
+  bool unlockWithPin(String pin) {
+    if (_pinHash != null && _hashPin(pin) == _pinHash) {
       _isUnlocked = true;
       notifyListeners();
       return true;
@@ -252,22 +271,12 @@ class AppProvider extends ChangeNotifier {
     return false;
   }
 
-  Future<void> setPin(String pin) async {
-    final hash = sha256.convert(utf8.encode(pin)).toString();
-    _pinHash = hash;
-    _isPinSet = true;
-    _isUnlocked = true;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('pin_hash', hash);
-    notifyListeners();
-  }
-
   Future<void> removePin() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('pin_hash');
     _pinHash = null;
     _isPinSet = false;
     _isUnlocked = true;
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('pin_hash');
     notifyListeners();
   }
 
@@ -278,7 +287,85 @@ class AppProvider extends ChangeNotifier {
     }
   }
 
-  // --- EVENTS & RECURRENCE ---
+  // --- SCHEDULE RESOLUTION & RESCHEDULING ENGINE ---
+  List<ScheduledSlot> getResolvedSchedule(String dateStr) {
+    return SchedulingEngine.resolveScheduleForDate(
+      targetDate: dateStr,
+      oneOffEvents: _events,
+      recurrenceRules: _recurrenceRules,
+      exceptions: _exceptions,
+    );
+  }
+
+  Future<void> rescheduleItemUniversal({
+    required String itemId,
+    required String itemType, // 'event', 'routine', 'task', 'note', 'alarm'
+    required String newDate,
+    String? newStartTime,
+    String? newEndTime,
+    bool isExceptionOnly = true,
+  }) async {
+    if (itemType == 'task') {
+      final taskIdx = _tasks.indexWhere((t) => t.id == itemId);
+      if (taskIdx != -1) {
+        final updated = _tasks[taskIdx].copyWith(dueDate: newDate);
+        await DatabaseHelper.instance.insertTask(updated);
+      }
+    } else if (itemType == 'alarm') {
+      final alarmIdx = _alarms.indexWhere((a) => a.id == itemId);
+      if (alarmIdx != -1 && newStartTime != null) {
+        final updated = _alarms[alarmIdx].copyWith(time: newStartTime);
+        await DatabaseHelper.instance.insertAlarm(updated);
+        await NotificationService.instance.scheduleAlarmNotification(updated, enableVibration: _vibrationEnabled);
+      }
+    } else if (itemType == 'event') {
+      final eventIdx = _events.indexWhere((e) => e.id == itemId);
+      if (eventIdx != -1) {
+        final event = _events[eventIdx];
+        final updated = event.copyWith(
+          date: newDate,
+          startTime: newStartTime ?? event.startTime,
+          endTime: newEndTime ?? event.endTime,
+        );
+        await DatabaseHelper.instance.insertEvent(updated);
+      }
+    } else if (itemType == 'routine') {
+      if (isExceptionOnly) {
+        final exception = ScheduleException(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          recurrenceRuleId: itemId,
+          originalDate: selectedDateStr,
+          newDate: newDate,
+          newStartTime: newStartTime ?? '',
+          newEndTime: newEndTime ?? '',
+          reason: 'Universal Reschedule',
+        );
+        await DatabaseHelper.instance.insertException(exception);
+      } else {
+        final ruleIdx = _recurrenceRules.indexWhere((r) => r.id == itemId);
+        if (ruleIdx != -1 && newStartTime != null && newEndTime != null) {
+          final updated = _recurrenceRules[ruleIdx].copyWith(
+            startTime: newStartTime,
+            endTime: newEndTime,
+          );
+          await DatabaseHelper.instance.insertRecurrenceRule(updated);
+        }
+      }
+    } else if (itemType == 'note') {
+      final noteIdx = _notes.indexWhere((n) => n.id == itemId);
+      if (noteIdx != -1) {
+        final updated = _notes[noteIdx].copyWith(
+          date: newDate,
+          startTime: newStartTime ?? _notes[noteIdx].startTime,
+        );
+        await DatabaseHelper.instance.insertNote(updated);
+      }
+    }
+
+    await refreshData();
+  }
+
+  // --- EVENTS ---
   Future<void> addEvent(CalendarEvent event) async {
     await DatabaseHelper.instance.insertEvent(event);
     await refreshData();
@@ -289,49 +376,10 @@ class AppProvider extends ChangeNotifier {
     await refreshData();
   }
 
+  // --- RECURRING RULES ---
   Future<void> addRecurrenceRule(RecurrenceRule rule) async {
     await DatabaseHelper.instance.insertRecurrenceRule(rule);
     await refreshData();
-  }
-
-  Future<void> postponeEvent({
-    required String recurrenceRuleId,
-    required String originalDate,
-    required String newDate,
-    required String newStartTime,
-    required String newEndTime,
-    String? reason,
-  }) async {
-    final exc = ScheduleException(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      recurrenceRuleId: recurrenceRuleId,
-      originalDate: originalDate,
-      newDate: newDate,
-      newStartTime: newStartTime,
-      newEndTime: newEndTime,
-      reason: reason,
-    );
-    await DatabaseHelper.instance.insertException(exc);
-    await refreshData();
-  }
-
-  List<ScheduledSlot> getResolvedSchedule(String dateStr) {
-    return SchedulingEngine.resolveScheduleForDate(
-      targetDate: dateStr,
-      oneOffEvents: _events,
-      recurrenceRules: _recurrenceRules,
-      exceptions: _exceptions,
-    );
-  }
-
-  List<CandidateSlot> getPostponeCandidates(DateTime fromDate, int durationMinutes) {
-    return SchedulingEngine.findCandidateSlots(
-      fromDate: fromDate,
-      durationMinutes: durationMinutes,
-      oneOffEvents: _events,
-      recurrenceRules: _recurrenceRules,
-      exceptions: _exceptions,
-    );
   }
 
   // --- TASKS ---
@@ -363,61 +411,13 @@ class AppProvider extends ChangeNotifier {
     await refreshData();
   }
 
-  Future<void> updateNoteTitle(String id, String newTitle) async {
-    final idx = _notes.indexWhere((n) => n.id == id);
-    if (idx != -1) {
-      final updated = _notes[idx].copyWith(
-        title: newTitle.trim().isEmpty ? 'Untitled' : newTitle.trim(),
-      );
-      await DatabaseHelper.instance.insertNote(updated);
-      await refreshData();
-    }
-  }
-
   Future<void> deleteNote(String id) async {
     await DatabaseHelper.instance.deleteNote(id);
     await refreshData();
   }
 
-  // --- UNIVERSAL RESCHEDULING METHODS ---
-  Future<void> rescheduleEvent(String id, String newDate, String newStartTime, String newEndTime) async {
-    final idx = _events.indexWhere((e) => e.id == id);
-    if (idx != -1) {
-      final updated = _events[idx].copyWith(
-        date: newDate,
-        startTime: newStartTime,
-        endTime: newEndTime,
-      );
-      await DatabaseHelper.instance.insertEvent(updated);
-      await refreshData();
-    }
-  }
-
-  Future<void> rescheduleTask(String id, String newDueDate, [String? newDueTime]) async {
-    final idx = _tasks.indexWhere((t) => t.id == id);
-    if (idx != -1) {
-      final updated = _tasks[idx].copyWith(dueDate: newDueDate);
-      await DatabaseHelper.instance.insertTask(updated);
-      await refreshData();
-    }
-  }
-
-  Future<void> rescheduleAlarm(String id, String newTime, [List<String>? newDays]) async {
-    final idx = _alarms.indexWhere((a) => a.id == id);
-    if (idx != -1) {
-      final updated = _alarms[idx].copyWith(
-        time: newTime,
-        repeatDays: newDays ?? _alarms[idx].repeatDays,
-        isEnabled: true,
-      );
-      await DatabaseHelper.instance.insertAlarm(updated);
-      await NotificationService.instance.scheduleAlarmNotification(updated);
-      await refreshData();
-    }
-  }
-
-  Future<void> rescheduleNote(String id, String newDate, [String? newTime]) async {
-    final idx = _notes.indexWhere((n) => n.id == id);
+  Future<void> rescheduleNote(String noteId, String newDate, {String? newTime}) async {
+    final idx = _notes.indexWhere((n) => n.id == noteId);
     if (idx != -1) {
       final updated = _notes[idx].copyWith(
         date: newDate,
@@ -503,7 +503,7 @@ class AppProvider extends ChangeNotifier {
   // --- ALARMS ---
   Future<void> addAlarm(AlarmItem alarm) async {
     await DatabaseHelper.instance.insertAlarm(alarm);
-    await NotificationService.instance.scheduleAlarmNotification(alarm);
+    await NotificationService.instance.scheduleAlarmNotification(alarm, enableVibration: _vibrationEnabled);
     await refreshData();
   }
 
@@ -511,7 +511,7 @@ class AppProvider extends ChangeNotifier {
     final updated = alarm.copyWith(isEnabled: !alarm.isEnabled);
     await DatabaseHelper.instance.insertAlarm(updated);
     if (updated.isEnabled) {
-      await NotificationService.instance.scheduleAlarmNotification(updated);
+      await NotificationService.instance.scheduleAlarmNotification(updated, enableVibration: _vibrationEnabled);
     } else {
       await NotificationService.instance.cancelAlarmNotification(updated.id);
     }
@@ -524,19 +524,17 @@ class AppProvider extends ChangeNotifier {
     await refreshData();
   }
 
-  Future<void> snoozeAlarm(AlarmItem alarm) async {
-    final now = DateTime.now().add(Duration(minutes: alarm.snoozeDurationMinutes));
-    final formattedHour = now.hour.toString().padLeft(2, '0');
-    final formattedMinute = now.minute.toString().padLeft(2, '0');
-    final newTime = '$formattedHour:$formattedMinute';
-
+  Future<void> snoozeAlarm(AlarmItem alarm, {int snoozeMinutes = 5}) async {
+    final now = DateTime.now().add(Duration(minutes: snoozeMinutes));
+    final newTime =
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
     final updated = alarm.copyWith(
       time: newTime,
       isSnoozed: true,
       isEnabled: true,
     );
     await DatabaseHelper.instance.insertAlarm(updated);
-    await NotificationService.instance.scheduleAlarmNotification(updated);
+    await NotificationService.instance.scheduleAlarmNotification(updated, enableVibration: _vibrationEnabled);
     await refreshData();
   }
 
@@ -545,7 +543,7 @@ class AppProvider extends ChangeNotifier {
     await DatabaseHelper.instance.insertAlarm(updated);
     // If repeat days are set, calculate and schedule next cycle
     if (alarm.repeatDays.isNotEmpty) {
-      await NotificationService.instance.scheduleAlarmNotification(updated);
+      await NotificationService.instance.scheduleAlarmNotification(updated, enableVibration: _vibrationEnabled);
     } else {
       // One-time alarm can be toggled off
       final disabled = updated.copyWith(isEnabled: false);
@@ -703,10 +701,17 @@ class AppProvider extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('wake_word_auto_trigger', enabled);
     if (enabled) {
-      SpeechService.instance.startWakeWordMonitoring(onQuery: (query) async {
-        final result = await LocalQueryEngine.processQuery(query, this);
-        await TtsService.instance.speak(result.spokenText);
-      });
+      SpeechService.instance.startWakeWordMonitoring(
+        onQuery: (query) async {
+          final result = await LocalQueryEngine.processQuery(query, this);
+          if (result.spokenText.isNotEmpty) {
+            await TtsService.instance.speak(result.spokenText);
+          }
+        },
+        onStop: () async {
+          await TtsService.instance.stop();
+        },
+      );
     } else {
       SpeechService.instance.stop();
     }
@@ -720,6 +725,15 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> setVibrationEnabled(bool enabled) async {
+    _vibrationEnabled = enabled;
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('vibration_enabled', enabled);
+    await NotificationService.instance.syncAllAlarms(_alarms, enableVibration: enabled);
+    await syncDailyBriefingSchedule();
+    notifyListeners();
+  }
+
   Future<void> syncDailyBriefingSchedule() async {
     await NotificationService.instance.scheduleDailyBriefings(
       enabled: _dailyBriefingEnabled,
@@ -728,63 +742,41 @@ class AppProvider extends ChangeNotifier {
       userName: _userName,
       pendingTasksCount: pendingTodayTasks.length,
       todayEventsCount: getResolvedSchedule(selectedDateStr).length,
+      enableVibration: _vibrationEnabled,
     );
   }
 
   String generateDailyBriefingSpeech({bool isEvening = false}) {
     final now = DateTime.now();
     final todayStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-    final allTasks = _tasks;
-    final pendingTasks = allTasks.where((t) {
-      final isDueTodayOrUnset = t.dueDate == null || t.dueDate == todayStr;
-      return isDueTodayOrUnset && t.status != 'completed';
-    }).toList();
+    final slots = getResolvedSchedule(todayStr);
+    final pending = pendingTodayTasks;
+    final completed = completedTodayTasks;
 
-    final todaySlots = getResolvedSchedule(todayStr);
-
-    final buffer = StringBuffer();
-    if (!isEvening) {
-      buffer.write('Hey $_userName, good morning! Here is your daily plan from Maid. ');
-      if (pendingTasks.isEmpty && todaySlots.isEmpty) {
-        buffer.write('You have no pending tasks or events for today. Enjoy your day!');
+    if (isEvening) {
+      if (pending.isEmpty) {
+        return 'Good evening $_userName! Amazing job today! You have completed all ${completed.length} tasks for today.';
       } else {
-        if (pendingTasks.isNotEmpty) {
-          final highPriority = pendingTasks.where((t) => t.priority == 3).toList();
-          if (highPriority.isNotEmpty) {
-            buffer.write('You have ${highPriority.length} high priority ${highPriority.length == 1 ? "task" : "tasks"}: ${highPriority.map((t) => t.title).join(", ")}. ');
-          }
-          final taskListStr = pendingTasks.take(4).map((t) => t.title).join(', ');
-          buffer.write('Overall, you have ${pendingTasks.length} pending ${pendingTasks.length == 1 ? "task" : "tasks"} today: $taskListStr. ');
-        } else {
-          buffer.write('All your tasks for today are already completed! ');
-        }
-
-        if (todaySlots.isNotEmpty) {
-          final eventStr = todaySlots.take(3).map((s) => '${s.title} at ${s.startTime}').join(', ');
-          buffer.write('You also have ${todaySlots.length} scheduled ${todaySlots.length == 1 ? "routine" : "routines"}: $eventStr. ');
-        }
-        buffer.write("Let's stay focused and make today productive!");
+        final taskTitles = pending.take(3).map((t) => t.title).join(', and ');
+        return 'Good evening $_userName! You completed ${completed.length} tasks today, and have ${pending.length} remaining: $taskTitles.';
       }
     } else {
-      buffer.write('Hey $_userName, good evening! Maid here with your nightly wrap-up. ');
-      if (pendingTasks.isEmpty) {
-        buffer.write('Congratulations! You have completed all of your tasks today. Have a relaxing evening!');
-      } else {
-        final taskListStr = pendingTasks.take(4).map((t) => t.title).join(', ');
-        buffer.write('You still have ${pendingTasks.length} remaining ${pendingTasks.length == 1 ? "task" : "tasks"}: $taskListStr. ');
-        buffer.write('Great effort today! Rest well and keep up the momentum.');
+      if (pending.isEmpty && slots.isEmpty) {
+        return 'Good morning $_userName! You currently have no pending tasks or events scheduled for today. Have a relaxed day!';
       }
+
+      List<String> parts = ['Good morning $_userName!'];
+      if (pending.isNotEmpty) {
+        final taskCountStr = '${pending.length} ${pending.length == 1 ? 'task' : 'tasks'}';
+        final top3 = pending.take(3).map((t) => t.title).join(', and ');
+        parts.add('You have $taskCountStr on your to-do list: $top3.');
+      }
+      if (slots.isNotEmpty) {
+        final slotTitles = slots.take(3).map((s) => '${s.title} at ${s.startTime}').join(', and ');
+        parts.add('Scheduled events include $slotTitles.');
+      }
+      parts.add('Let\'s have a productive day!');
+      return parts.join(' ');
     }
-
-    return buffer.toString();
-  }
-
-  // --- WEEKLY REVIEW ---
-  WeeklyReviewReport getWeeklyReport() {
-    return WeeklyReviewEngine.generateReport(
-      studySessions: _studySessions,
-      tasks: _tasks,
-      exceptions: _exceptions,
-    );
   }
 }

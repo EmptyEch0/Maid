@@ -1,73 +1,78 @@
-import 'dart:typed_data';
+﻿import 'dart:typed_data';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
+import 'package:timezone/data/latest_all.dart' as tz;
 import '../models/app_models.dart';
 
 class NotificationService {
   static final NotificationService instance = NotificationService._init();
   final FlutterLocalNotificationsPlugin _notifications = FlutterLocalNotificationsPlugin();
+  bool _isInitialized = false;
 
-  void Function(String? payload)? onNotificationClick;
+  Function(String? payload)? onNotificationClick;
 
   NotificationService._init();
 
   Future<void> init() async {
+    if (_isInitialized) return;
+
     tz.initializeTimeZones();
 
     const AndroidInitializationSettings androidSettings =
         AndroidInitializationSettings('@mipmap/ic_launcher');
+
     const DarwinInitializationSettings iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
       requestSoundPermission: true,
     );
-    const LinuxInitializationSettings linuxSettings =
-        LinuxInitializationSettings(defaultActionName: 'Open Maid');
 
     const InitializationSettings initSettings = InitializationSettings(
       android: androidSettings,
       iOS: iosSettings,
-      macOS: iosSettings,
-      linux: linuxSettings,
     );
 
     await _notifications.initialize(
       initSettings,
-      onDidReceiveNotificationResponse: (NotificationResponse details) {
-        if (onNotificationClick != null) {
-          onNotificationClick!(details.payload);
-        }
+      onDidReceiveNotificationResponse: (NotificationResponse response) {
+        onNotificationClick?.call(response.payload);
       },
     );
 
-    // Request runtime notification & exact alarm permissions on Android 13+
-    final androidImplementation = _notifications
-        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-    if (androidImplementation != null) {
-      await androidImplementation.requestNotificationsPermission();
-      await androidImplementation.requestExactAlarmsPermission();
+    // Create high priority Notification Channel for Alarms & Morning/Evening Briefings
+    final AndroidNotificationChannel alarmChannel = AndroidNotificationChannel(
+      'maid_alarm_channel',
+      'Maid Alarms & Wake-Up Calls',
+      description: 'Critical exact alarm notifications for waking up and scheduled tasks',
+      importance: Importance.max,
+      playSound: true,
+      enableVibration: true,
+      vibrationPattern: Int64List.fromList([0, 1000, 500, 1000, 500, 1000, 500, 1000]),
+      audioAttributesUsage: AudioAttributesUsage.alarm,
+    );
 
-      const AndroidNotificationChannel channel = AndroidNotificationChannel(
-        'maid_alarm_channel',
-        'Maid Alarms & Wake-Up Calls',
-        description: 'Critical exact alarm notifications for waking up and scheduled tasks',
-        importance: Importance.max,
-        playSound: true,
-        enableVibration: true,
-        audioAttributesUsage: AudioAttributesUsage.alarm,
-      );
-      await androidImplementation.createNotificationChannel(channel);
+    await _notifications
+        .resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>()
+        ?.createNotificationChannel(alarmChannel);
 
-      const AndroidNotificationChannel reminderChannel = AndroidNotificationChannel(
-        'maid_channel_id',
-        'Maid Reminders & Tasks',
-        description: 'General scheduled reminders and task notifications',
-        importance: Importance.high,
-        playSound: true,
-        enableVibration: true,
+    _isInitialized = true;
+  }
+
+  Future<void> requestPermissions() async {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      final androidPlugin = _notifications.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      await androidPlugin?.requestNotificationsPermission();
+      await androidPlugin?.requestExactAlarmsPermission();
+    } else if (defaultTargetPlatform == TargetPlatform.iOS) {
+      final iosPlugin = _notifications.resolvePlatformSpecificImplementation<
+          IOSFlutterLocalNotificationsPlugin>();
+      await iosPlugin?.requestPermissions(
+        alert: true,
+        badge: true,
+        sound: true,
       );
-      await androidImplementation.createNotificationChannel(reminderChannel);
     }
   }
 
@@ -120,7 +125,7 @@ class NotificationService {
   }
 
   /// Schedules an exact wake-up alarm notification
-  Future<void> scheduleAlarmNotification(AlarmItem alarm) async {
+  Future<void> scheduleAlarmNotification(AlarmItem alarm, {bool enableVibration = true}) async {
     if (!alarm.isEnabled) {
       await cancelAlarmNotification(alarm.id);
       return;
@@ -131,7 +136,9 @@ class NotificationService {
       final tz.TZDateTime tzDate = tz.TZDateTime.from(targetDate, tz.local);
       final int notifId = alarm.id.hashCode & 0x7FFFFFFF;
 
-      final vibrationPattern = Int64List.fromList([0, 1000, 500, 1000, 500, 1000, 500, 1000]);
+      final vibrationPattern = enableVibration
+          ? Int64List.fromList([0, 1000, 500, 1000, 500, 1000, 500, 1000])
+          : null;
 
       final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
         'maid_alarm_channel',
@@ -140,7 +147,7 @@ class NotificationService {
         importance: Importance.max,
         priority: Priority.max,
         playSound: true,
-        enableVibration: true,
+        enableVibration: enableVibration,
         vibrationPattern: vibrationPattern,
         fullScreenIntent: true,
         category: AndroidNotificationCategory.alarm,
@@ -151,7 +158,7 @@ class NotificationService {
 
       final NotificationDetails details = NotificationDetails(
         android: androidDetails,
-        iOS: const DarwinNotificationDetails(
+        iOS: DarwinNotificationDetails(
           presentAlert: true,
           presentBadge: true,
           presentSound: true,
@@ -178,10 +185,10 @@ class NotificationService {
   }
 
   /// Syncs and schedules all active alarms
-  Future<void> syncAllAlarms(List<AlarmItem> alarms) async {
+  Future<void> syncAllAlarms(List<AlarmItem> alarms, {bool enableVibration = true}) async {
     for (final alarm in alarms) {
       if (alarm.isEnabled) {
-        await scheduleAlarmNotification(alarm);
+        await scheduleAlarmNotification(alarm, enableVibration: enableVibration);
       } else {
         await cancelAlarmNotification(alarm.id);
       }
@@ -193,24 +200,25 @@ class NotificationService {
     required String title,
     required String body,
     required DateTime scheduledDate,
+    bool enableVibration = true,
   }) async {
     try {
       final tz.TZDateTime tzDate = tz.TZDateTime.from(scheduledDate, tz.local);
       if (tzDate.isBefore(tz.TZDateTime.now(tz.local))) return;
 
-      const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+      final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
         'maid_channel_id',
         'Maid Reminders & Tasks',
         channelDescription: 'Local scheduled event & task notifications',
         importance: Importance.high,
         priority: Priority.high,
         playSound: true,
-        enableVibration: true,
+        enableVibration: enableVibration,
       );
 
-      const NotificationDetails details = NotificationDetails(
+      final NotificationDetails details = NotificationDetails(
         android: androidDetails,
-        iOS: DarwinNotificationDetails(
+        iOS: const DarwinNotificationDetails(
           presentAlert: true,
           presentBadge: true,
           presentSound: true,
@@ -240,6 +248,7 @@ class NotificationService {
     String userName = 'Likhith',
     int pendingTasksCount = 0,
     int todayEventsCount = 0,
+    bool enableVibration = true,
   }) async {
     // Cancel existing daily briefing notifications
     await cancelNotification(morningBriefingNotifId);
@@ -279,7 +288,10 @@ class NotificationService {
         importance: Importance.max,
         priority: Priority.max,
         playSound: true,
-        enableVibration: true,
+        enableVibration: enableVibration,
+        vibrationPattern: enableVibration
+            ? Int64List.fromList([0, 800, 400, 800, 400, 800])
+            : null,
         fullScreenIntent: true,
         category: AndroidNotificationCategory.reminder,
         audioAttributesUsage: AudioAttributesUsage.alarm,

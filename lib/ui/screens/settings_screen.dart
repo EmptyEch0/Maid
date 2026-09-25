@@ -12,6 +12,20 @@ import '../widgets/universal_reschedule_dialog.dart';
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
+  String _format12HourTime(String timeStr) {
+    try {
+      final parts = timeStr.split(':');
+      final h = int.parse(parts[0]);
+      final m = int.parse(parts[1]);
+      final ampm = h >= 12 ? 'PM' : 'AM';
+      final displayH = h % 12 == 0 ? 12 : h % 12;
+      final displayM = m.toString().padLeft(2, '0');
+      return '$displayH:$displayM $ampm';
+    } catch (_) {
+      return timeStr;
+    }
+  }
+
   void _showAddCustomToneDialog(BuildContext context, AppProvider provider, {required bool isAlarmTone}) {
     final textCtrl = TextEditingController();
     String? selectedFilePath;
@@ -382,7 +396,7 @@ class SettingsScreen extends StatelessWidget {
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
                     title: const Text('Enable Daily Briefings', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                    subtitle: const Text('Scheduled 9:00 AM Morning Plan & 8:00 PM Nightly Wrap-Up notifications', style: TextStyle(fontSize: 11)),
+                    subtitle: const Text('Scheduled customizable Morning Plan (e.g. 8:00 AM) & Nightly Review (e.g. 9:00 PM) notifications', style: TextStyle(fontSize: 11)),
                     value: provider.dailyBriefingEnabled,
                     activeThumbColor: const Color(0xFF6366F1),
                     onChanged: (val) => provider.setDailyBriefingEnabled(val),
@@ -400,7 +414,7 @@ class SettingsScreen extends StatelessWidget {
                               final picked = await showTimePicker(
                                 context: context,
                                 initialTime: TimeOfDay(
-                                  hour: int.tryParse(currentParts[0]) ?? 9,
+                                  hour: int.tryParse(currentParts[0]) ?? 8,
                                   minute: currentParts.length > 1 ? int.tryParse(currentParts[1]) ?? 0 : 0,
                                 ),
                               );
@@ -419,9 +433,22 @@ class SettingsScreen extends StatelessWidget {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text('☀️ Morning Plan', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFF59E0B))),
+                                  const Row(
+                                    children: [
+                                      Text('☀️ Morning Plan', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFFF59E0B))),
+                                      Spacer(),
+                                      Icon(Icons.edit_time_rounded, size: 14, color: Color(0xFFF59E0B)),
+                                    ],
+                                  ),
                                   const SizedBox(height: 4),
-                                  Text(provider.morningBriefingTime, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                                  Text(
+                                    _format12HourTime(provider.morningBriefingTime),
+                                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                                  ),
+                                  Text(
+                                    provider.morningBriefingTime,
+                                    style: const TextStyle(fontSize: 10.5, color: Colors.grey),
+                                  ),
                                 ],
                               ),
                             ),
@@ -436,7 +463,7 @@ class SettingsScreen extends StatelessWidget {
                               final picked = await showTimePicker(
                                 context: context,
                                 initialTime: TimeOfDay(
-                                  hour: int.tryParse(currentParts[0]) ?? 20,
+                                  hour: int.tryParse(currentParts[0]) ?? 21,
                                   minute: currentParts.length > 1 ? int.tryParse(currentParts[1]) ?? 0 : 0,
                                 ),
                               );
@@ -455,9 +482,22 @@ class SettingsScreen extends StatelessWidget {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
-                                  const Text('🌙 Evening Review', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF8B5CF6))),
+                                  const Row(
+                                    children: [
+                                      Text('🌙 Evening Review', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Color(0xFF8B5CF6))),
+                                      Spacer(),
+                                      Icon(Icons.edit_time_rounded, size: 14, color: Color(0xFF8B5CF6)),
+                                    ],
+                                  ),
                                   const SizedBox(height: 4),
-                                  Text(provider.eveningBriefingTime, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
+                                  Text(
+                                    _format12HourTime(provider.eveningBriefingTime),
+                                    style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                                  ),
+                                  Text(
+                                    provider.eveningBriefingTime,
+                                    style: const TextStyle(fontSize: 10.5, color: Colors.grey),
+                                  ),
                                 ],
                               ),
                             ),
@@ -469,6 +509,16 @@ class SettingsScreen extends StatelessWidget {
 
                   const Divider(height: 24),
 
+                  // Alarm & Notification Vibration Toggle
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Alarm & Notification Vibration', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                    subtitle: const Text('Tactile vibration feedback for wake-up alarms, briefings, and reminders', style: TextStyle(fontSize: 11)),
+                    value: provider.vibrationEnabled,
+                    activeThumbColor: const Color(0xFF6366F1),
+                    onChanged: (val) => provider.setVibrationEnabled(val),
+                  ),
+
                   // Auto Speak Briefing on Notification / Launch
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
@@ -479,11 +529,11 @@ class SettingsScreen extends StatelessWidget {
                     onChanged: (val) => provider.setAutoSpeakBriefing(val),
                   ),
 
-                  // Wake Word "Hey Maid" Auto-Trigger
+                  // Wake Word "Hey Maid" Auto-Trigger & Voice Stop
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('"Hey Maid" Voice Auto-Trigger', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                    subtitle: const Text('Always listen for "Hey Maid" to automatically wake assistant and speak your plan', style: TextStyle(fontSize: 11)),
+                    title: const Text('"Hey Maid" Voice Auto-Trigger & Stop', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                    subtitle: const Text('Always listen for "Hey Maid" to wake assistant, and say "Stop" / "Shut up" anytime to immediately silence speech', style: TextStyle(fontSize: 11)),
                     value: provider.wakeWordAutoTriggerEnabled,
                     activeThumbColor: const Color(0xFF10B981),
                     onChanged: (val) => provider.setWakeWordAutoTriggerEnabled(val),
