@@ -361,6 +361,7 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
     final Set<String> selectedDays = Set.from(alarm?.repeatDays ?? []);
     String ringtone = alarm?.soundRingtone ?? provider.defaultAlarmTone;
     int snoozeMins = alarm?.snoozeDurationMinutes ?? 5;
+    bool vibrate = alarm?.vibrate ?? true;
 
     showModalBottomSheet(
       context: context,
@@ -595,7 +596,24 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
                       ],
                     ),
 
-                    const SizedBox(height: 28),
+                    const SizedBox(height: 14),
+
+                    // Alarm Vibration Switch
+                    SwitchListTile(
+                      contentPadding: EdgeInsets.zero,
+                      title: const Text('Alarm Vibration', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                      subtitle: const Text('Vibrate phone when alarm rings', style: TextStyle(fontSize: 12)),
+                      secondary: Icon(
+                        vibrate ? Icons.vibration_rounded : Icons.smartphone_rounded,
+                        color: vibrate ? colorScheme.primary : Colors.grey,
+                      ),
+                      value: vibrate,
+                      onChanged: (val) {
+                        setModalState(() => vibrate = val);
+                      },
+                    ),
+
+                    const SizedBox(height: 20),
 
                     // Save Button
                     SizedBox(
@@ -625,6 +643,7 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
                             repeatDays: selectedDays.toList(),
                             soundRingtone: ringtone,
                             snoozeDurationMinutes: snoozeMins,
+                            vibrate: vibrate,
                           );
 
                           await provider.addAlarm(newAlarm);
@@ -1049,11 +1068,41 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
                     Icon(Icons.music_note_rounded, size: 12, color: colorScheme.primary),
                     const SizedBox(width: 4),
                     ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 90),
+                      constraints: const BoxConstraints(maxWidth: 80),
                       child: Text(
                         alarm.soundRingtone,
                         style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
                         overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
+              const SizedBox(width: 6),
+
+              // Vibration badge
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                decoration: BoxDecoration(
+                  color: (alarm.vibrate ? colorScheme.primary : Colors.grey).withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      alarm.vibrate ? Icons.vibration_rounded : Icons.smartphone_rounded,
+                      size: 12,
+                      color: alarm.vibrate ? colorScheme.primary : Colors.grey,
+                    ),
+                    const SizedBox(width: 3),
+                    Text(
+                      alarm.vibrate ? 'Vibrate' : 'Silent',
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                        color: alarm.vibrate ? colorScheme.primary : Colors.grey,
                       ),
                     ),
                   ],

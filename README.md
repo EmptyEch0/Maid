@@ -27,31 +27,39 @@
 * **Natural Language Parser Engine (`NlpParserEngine`)**: Automatically parses commands like *"Schedule DSA practice tomorrow at 4 PM"* or *"Remind me to submit project on Friday"*.
 * **Local Query Engine (`LocalQueryEngine`)**: Instant semantic searching across all events, tasks, notes, and study logs.
 
-### 📅 2. Dynamic Calendar & Intelligent Scheduling
+### 📅 2. Dynamic Calendar, Custom Colors & Pre-Date Reminders
+* **Vibrant Color Coding**: Customize events with special highlight color palettes (Indigo, Rose, Emerald Green, Amber Gold, Purple, Cyan Sky, Crimson, Fire Orange).
+* **Glowing Calendar Markers**: Dates with events display luminous dot indicators matching the event's custom theme directly in the monthly/weekly view.
+* **Pre-Date Reminders**: Set automated notifications up to **1 day before**, **2 days before**, 1 hour before, or at event time for advance preparation (e.g. October 3rd event).
 * **Time-Blocking & Recurrence**: Support for recurring schedules, routine rules (`RecurrenceRule`), and smart conflict resolution.
 * **Universal Rescheduler**: Seamless exception handling (`ScheduleException`) that lets you shift tasks and routines without breaking master schedules.
-* **Visual Time Map**: Color-coded categorization (Study, Work, Health, Routine, Personal).
 
-### 🚀 3. DSA Roadmap & Mastery Tracker
+### ✅ 3. Smart To-Do List & Automatic Task Rollover
+* **Auto-Rescheduling / Rollover**: Incomplete tasks from yesterday or past days are automatically carried forward and rescheduled to Today.
+* **Rollover Badges & Tracking**: Displays badges showing the original scheduled date (`⚡ Rolled over from YYYY-MM-DD`).
+* **Fast Add & Priority Management**: Rapid inline task capture with P1 (High), P2 (Medium), P3 (Low) tagging.
+
+### 🚀 4. DSA Roadmap & Mastery Tracker
 * **Curated Curriculum (`DsaPlanSeeder`)**: Pre-loaded step-by-step Data Structures & Algorithms roadmap.
 * **Topic Breakdowns**: Detailed problem lists, completion metrics, and milestone progression.
 * **Interactive Checklists**: Real-time status updates and revision tracking.
 
-### ⏱️ 4. Focus Study Timer & Pomodoro Engine
+### ⏱️ 5. Focus Study Timer & Pomodoro Engine
 * **Customizable Intervals**: Work/break intervals tailored to your focus rhythm.
 * **Heatmap Activity Matrix (`StudyHeatmap`)**: GitHub-style daily commit/study activity heatmap.
 * **Weekly Review Engine (`WeeklyReviewEngine`)**: Automated weekly retrospectives, efficiency scores, and actionable feedback.
 
-### ⏰ 5. Advanced Alarms & Wake-up System
-* **Custom Audio Engine (`just_audio`)**: Support for custom audio files and bundled alarm tones.
-* **Interactive Ringing Screen**: Full-screen dialog with snooze and dismissal controls.
+### ⏰ 6. Advanced Alarms & Wake-up System
+* **Per-Alarm Vibration Toggles**: Switch vibration ON/OFF individually per alarm or globally.
+* **Rich Alarm Tone Library**: Built-in sound patterns (Gentle Chime, Energetic Pulse, Radar Alarm, Classic Bell, Morning Birds, Digital Beep, Zen Gong, Vibrant Siren) plus custom audio file import (`.mp3`, `.wav`, `.m4a`).
+* **Interactive Ringing Screen**: Full-screen dialog with ripple animations, TTS voice announcements, snooze, and dismissal controls.
 * **Exact Scheduling**: Powered by `flutter_local_notifications` and exact alarm permissions for guaranteed reliability.
 
-### 📝 6. Rich Notes & Linked Knowledge Base
+### 📝 7. Rich Notes & Linked Knowledge Base
 * **Cross-linked Context**: Link notes directly to calendar events, tasks, and DSA topics.
 * **Tagging & Filtering**: Instant organization with multi-tag support and search.
 
-### 🔒 7. Privacy & Security
+### 🔒 8. Privacy & Security
 * **100% Offline Storage**: All personal data is stored locally in an encrypted/isolated SQLite database (`sqflite`).
 * **App Lock Protection**: PIN and biometric verification screen (`AppLockScreen`).
 

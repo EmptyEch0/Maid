@@ -12,6 +12,8 @@ class ScheduledSlot {
   final String? recurrenceRuleId;
   final bool isException;
   final String? originalDate;
+  final String? colorHex;
+  final int reminderMinutesBefore;
 
   ScheduledSlot({
     required this.id,
@@ -24,6 +26,8 @@ class ScheduledSlot {
     this.recurrenceRuleId,
     this.isException = false,
     this.originalDate,
+    this.colorHex,
+    this.reminderMinutesBefore = 15,
   });
 
   DateTime get startDateTime {
@@ -88,6 +92,8 @@ class SchedulingEngine {
           endTime: event.endTime,
           category: event.category,
           isRecurringInstance: false,
+          colorHex: event.colorHex,
+          reminderMinutesBefore: event.reminderMinutesBefore,
         ));
       }
     }

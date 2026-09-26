@@ -57,7 +57,9 @@ class DatabaseHelper {
         category TEXT NOT NULL,
         priority INTEGER NOT NULL,
         notes TEXT,
-        completion_status TEXT NOT NULL
+        completion_status TEXT NOT NULL,
+        color_hex TEXT,
+        reminder_minutes_before INTEGER DEFAULT 15
       )
     ''');
 
@@ -91,7 +93,9 @@ class DatabaseHelper {
         due_date TEXT,
         priority INTEGER NOT NULL,
         status TEXT NOT NULL,
-        notes TEXT
+        notes TEXT,
+        is_auto_rescheduled INTEGER DEFAULT 0,
+        original_due_date TEXT
       )
     ''');
 
@@ -253,7 +257,8 @@ class DatabaseHelper {
         repeat_days_json TEXT,
         sound_ringtone TEXT NOT NULL,
         snooze_duration_minutes INTEGER NOT NULL,
-        is_snoozed INTEGER NOT NULL
+        is_snoozed INTEGER NOT NULL,
+        vibrate INTEGER NOT NULL DEFAULT 1
       )
     ''');
 
@@ -268,6 +273,13 @@ class DatabaseHelper {
         category TEXT NOT NULL
       )
     ''');
+
+    // Run safe migrations for existing DBs
+    try { await db.execute('ALTER TABLE events ADD COLUMN color_hex TEXT'); } catch (_) {}
+    try { await db.execute('ALTER TABLE events ADD COLUMN reminder_minutes_before INTEGER DEFAULT 15'); } catch (_) {}
+    try { await db.execute('ALTER TABLE tasks ADD COLUMN is_auto_rescheduled INTEGER DEFAULT 0'); } catch (_) {}
+    try { await db.execute('ALTER TABLE tasks ADD COLUMN original_due_date TEXT'); } catch (_) {}
+    try { await db.execute('ALTER TABLE alarms ADD COLUMN vibrate INTEGER DEFAULT 1'); } catch (_) {}
   }
 
   // --- ALARMS ---

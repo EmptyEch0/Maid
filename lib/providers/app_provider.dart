@@ -183,12 +183,29 @@ class AppProvider extends ChangeNotifier {
   }
 
   // --- HELPER GETTERS FOR TODAY'S WORK & TASKS ---
+  String get todayRealDateStr {
+    final now = DateTime.now();
+    return '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+  }
+
   List<TaskItem> get todayTasks {
-    return _tasks.where((t) => t.dueDate == selectedDateStr || t.dueDate == null).toList();
+    return _tasks.where((t) {
+      if (t.dueDate == selectedDateStr || t.dueDate == null) return true;
+      if (selectedDateStr == todayRealDateStr && t.status != 'completed' && t.dueDate != null && t.dueDate!.compareTo(todayRealDateStr) < 0) {
+        return true;
+      }
+      return false;
+    }).toList();
   }
 
   List<TaskItem> get pendingTodayTasks {
-    return _tasks.where((t) => (t.dueDate == selectedDateStr || t.dueDate == null) && t.status != 'completed').toList();
+    return _tasks.where((t) {
+      if ((t.dueDate == selectedDateStr || t.dueDate == null) && t.status != 'completed') return true;
+      if (selectedDateStr == todayRealDateStr && t.status != 'completed' && t.dueDate != null && t.dueDate!.compareTo(todayRealDateStr) < 0) {
+        return true;
+      }
+      return false;
+    }).toList();
   }
 
   List<TaskItem> get pendingAllTasks {
@@ -197,6 +214,43 @@ class AppProvider extends ChangeNotifier {
 
   List<TaskItem> get completedTodayTasks {
     return _tasks.where((t) => (t.dueDate == selectedDateStr || t.dueDate == null) && t.status == 'completed').toList();
+  }
+
+  List<CalendarEvent> getEventsForDay(DateTime day) {
+    final dateStr = '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+    return _events.where((e) => e.date == dateStr).toList();
+  }
+
+  bool hasEventsOnDay(DateTime day) {
+    final dateStr = '${day.year}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+    return _events.any((e) => e.date == dateStr);
+  }
+
+  /// Automatically reschedules uncompleted tasks from past dates to today
+  Future<int> autoRescheduleOverdueTasks() async {
+    final db = DatabaseHelper.instance;
+    final todayReal = todayRealDateStr;
+    int rescheduledCount = 0;
+
+    for (final task in _tasks) {
+      if (task.status != 'completed' && task.dueDate != null && task.dueDate!.isNotEmpty) {
+        if (task.dueDate!.compareTo(todayReal) < 0) {
+          final original = task.originalDueDate ?? task.dueDate;
+          final updated = task.copyWith(
+            dueDate: todayReal,
+            isAutoRescheduled: true,
+            originalDueDate: original,
+          );
+          await db.insertTask(updated);
+          rescheduledCount++;
+        }
+      }
+    }
+
+    if (rescheduledCount > 0) {
+      _tasks = await db.getTasks();
+    }
+    return rescheduledCount;
   }
 
   Future<void> refreshData() async {
@@ -210,6 +264,14 @@ class AppProvider extends ChangeNotifier {
     _inboxItems = await db.getInboxItems();
     _alarms = await db.getAlarms();
     _habits = await db.getHabits();
+
+    // Auto-reschedule any overdue uncompleted tasks to today
+    await autoRescheduleOverdueTasks();
+
+    // Schedule notifications for all upcoming calendar events
+    for (final event in _events) {
+      await NotificationService.instance.scheduleEventReminder(event, enableVibration: _vibrationEnabled);
+    }
 
     // Sync Android Home Widget data with today's live stats
     await WidgetUpdateService.instance.updateTodoWidget(
@@ -388,11 +450,13 @@ class AppProvider extends ChangeNotifier {
   // --- EVENTS ---
   Future<void> addEvent(CalendarEvent event) async {
     await DatabaseHelper.instance.insertEvent(event);
+    await NotificationService.instance.scheduleEventReminder(event, enableVibration: _vibrationEnabled);
     await refreshData();
   }
 
   Future<void> deleteEvent(String id) async {
     await DatabaseHelper.instance.deleteEvent(id);
+    await NotificationService.instance.cancelEventReminder(id);
     await refreshData();
   }
 

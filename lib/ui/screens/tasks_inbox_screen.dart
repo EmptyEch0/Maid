@@ -235,14 +235,13 @@ class _TasksInboxScreenState extends State<TasksInboxScreen> with SingleTickerPr
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final allTasks = provider.tasks;
-    final todayStr = provider.selectedDateStr;
 
     // Filter tasks based on selected filter
     List<TaskItem> filteredList;
     if (_filterMode == 'today') {
-      filteredList = allTasks.where((t) => t.dueDate == null || t.dueDate == todayStr).toList();
+      filteredList = provider.todayTasks;
     } else if (_filterMode == 'pending') {
-      filteredList = allTasks.where((t) => t.status != 'completed').toList();
+      filteredList = provider.pendingAllTasks;
     } else if (_filterMode == 'completed') {
       filteredList = allTasks.where((t) => t.status == 'completed').toList();
     } else {
@@ -252,6 +251,7 @@ class _TasksInboxScreenState extends State<TasksInboxScreen> with SingleTickerPr
     final totalCount = allTasks.length;
     final completedCount = allTasks.where((t) => t.status == 'completed').length;
     final progress = totalCount > 0 ? (completedCount / totalCount) : 0.0;
+    final autoRescheduledCount = allTasks.where((t) => t.isAutoRescheduled && t.status != 'completed').length;
 
     return Column(
       children: [
@@ -333,6 +333,32 @@ class _TasksInboxScreenState extends State<TasksInboxScreen> with SingleTickerPr
             ),
           ),
         ),
+
+        // Auto-Rollover Info Banner (if any tasks were rolled over from yesterday)
+        if (autoRescheduledCount > 0 && _filterMode == 'today')
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.amber.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.auto_mode_rounded, color: Colors.amber, size: 16),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '⚡ $autoRescheduledCount uncompleted task(s) auto-rescheduled from previous days to today!',
+                      style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.amber),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
 
         // 2. PROGRESS & STATS HEADER BAR
         Padding(
@@ -527,25 +553,54 @@ class _TasksInboxScreenState extends State<TasksInboxScreen> with SingleTickerPr
                                       ),
                                     ),
                                     const SizedBox(height: 3),
-                                    Row(
+                                    Wrap(
+                                      spacing: 6,
+                                      runSpacing: 4,
+                                      crossAxisAlignment: WrapCrossAlignment.center,
                                       children: [
                                         if (task.dueDate != null) ...[
-                                          Icon(Icons.event_outlined, size: 12, color: theme.colorScheme.primary),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            task.dueDate!,
-                                            style: TextStyle(
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w600,
-                                              color: theme.colorScheme.primary,
-                                            ),
+                                          Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Icon(Icons.event_outlined, size: 12, color: theme.colorScheme.primary),
+                                              const SizedBox(width: 3),
+                                              Text(
+                                                task.dueDate!,
+                                                style: TextStyle(
+                                                  fontSize: 11,
+                                                  fontWeight: FontWeight.w600,
+                                                  color: theme.colorScheme.primary,
+                                                ),
+                                              ),
+                                            ],
                                           ),
-                                          const SizedBox(width: 6),
                                         ],
                                         GlassPillBadge(
                                           label: priorityLabel,
                                           color: priorityColor,
                                         ),
+                                        if (task.isAutoRescheduled)
+                                          Container(
+                                            padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                            decoration: BoxDecoration(
+                                              color: Colors.amber.withValues(alpha: 0.15),
+                                              borderRadius: BorderRadius.circular(6),
+                                              border: Border.all(color: Colors.amber.withValues(alpha: 0.3), width: 0.8),
+                                            ),
+                                            child: Row(
+                                              mainAxisSize: MainAxisSize.min,
+                                              children: [
+                                                const Icon(Icons.auto_mode_rounded, size: 10, color: Colors.amber),
+                                                const SizedBox(width: 3),
+                                                Text(
+                                                  task.originalDueDate != null
+                                                      ? 'Rolled over (${task.originalDueDate})'
+                                                      : 'Rolled to Today',
+                                                  style: const TextStyle(fontSize: 10, color: Colors.amber, fontWeight: FontWeight.bold),
+                                                ),
+                                              ],
+                                            ),
+                                          ),
                                       ],
                                     ),
                                   ],

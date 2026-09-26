@@ -134,8 +134,9 @@ class NotificationService {
       final targetDate = calculateNextTriggerTime(alarm.time, alarm.repeatDays);
       final tz.TZDateTime tzDate = tz.TZDateTime.from(targetDate, tz.local);
       final int notifId = alarm.id.hashCode & 0x7FFFFFFF;
+      final bool effectiveVibration = alarm.vibrate && enableVibration;
 
-      final vibrationPattern = enableVibration
+      final vibrationPattern = effectiveVibration
           ? Int64List.fromList([0, 1000, 500, 1000, 500, 1000, 500, 1000])
           : null;
 
@@ -146,7 +147,7 @@ class NotificationService {
         importance: Importance.max,
         priority: Priority.max,
         playSound: true,
-        enableVibration: enableVibration,
+        enableVibration: effectiveVibration,
         vibrationPattern: vibrationPattern,
         fullScreenIntent: true,
         category: AndroidNotificationCategory.alarm,
@@ -192,6 +193,82 @@ class NotificationService {
         await cancelAlarmNotification(alarm.id);
       }
     }
+  }
+
+  /// Schedules an event reminder (supports pre-date like 1-day before, 1-hour before, etc.)
+  Future<void> scheduleEventReminder(CalendarEvent event, {bool enableVibration = true}) async {
+    if (event.reminderMinutesBefore < 0) {
+      await cancelEventReminder(event.id);
+      return;
+    }
+
+    try {
+      final dateParts = event.date.split('-');
+      final timeParts = event.startTime.split(':');
+      if (dateParts.length != 3 || timeParts.length < 2) return;
+
+      final int year = int.parse(dateParts[0]);
+      final int month = int.parse(dateParts[1]);
+      final int day = int.parse(dateParts[2]);
+      final int hour = int.parse(timeParts[0]);
+      final int minute = int.parse(timeParts[1]);
+
+      final eventStartTime = DateTime(year, month, day, hour, minute);
+      final reminderTime = eventStartTime.subtract(Duration(minutes: event.reminderMinutesBefore));
+
+      final now = DateTime.now();
+      if (reminderTime.isBefore(now)) return; // Already passed
+
+      final notifId = event.id.hashCode & 0x7FFFFFFF;
+      final tz.TZDateTime tzReminder = tz.TZDateTime.from(reminderTime, tz.local);
+
+      String bodyText;
+      if (event.reminderMinutesBefore == 1440) {
+        bodyText = '📅 Upcoming tomorrow at ${event.startTime}: ${event.title} (${event.category})';
+      } else if (event.reminderMinutesBefore >= 60) {
+        final hours = event.reminderMinutesBefore ~/ 60;
+        bodyText = '⏰ Starts in $hours hour(s) at ${event.startTime}: ${event.title}';
+      } else if (event.reminderMinutesBefore > 0) {
+        bodyText = '⏰ Starts in ${event.reminderMinutesBefore} minutes at ${event.startTime}: ${event.title}';
+      } else {
+        bodyText = '🎯 Event starting now: ${event.title} (${event.startTime} - ${event.endTime})';
+      }
+
+      final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
+        'maid_channel_id',
+        'Maid Reminders & Events',
+        channelDescription: 'Scheduled calendar event reminders and alerts',
+        importance: Importance.high,
+        priority: Priority.high,
+        playSound: true,
+        enableVibration: enableVibration,
+      );
+
+      final NotificationDetails details = NotificationDetails(
+        android: androidDetails,
+        iOS: const DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      );
+
+      await _notifications.zonedSchedule(
+        notifId,
+        '📅 Event Reminder: ${event.title}',
+        bodyText,
+        tzReminder,
+        details,
+        payload: 'event_${event.id}',
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+      );
+    } catch (_) {}
+  }
+
+  Future<void> cancelEventReminder(String eventId) async {
+    final int notifId = eventId.hashCode & 0x7FFFFFFF;
+    await _notifications.cancel(notifId);
   }
 
   Future<void> scheduleNotification({

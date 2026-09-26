@@ -10,6 +10,8 @@ class CalendarEvent {
   final int priority; // 1 (low) to 3 (high)
   final String? notes;
   final String completionStatus; // 'pending', 'completed', 'cancelled'
+  final String? colorHex; // e.g. '#6366F1'
+  final int reminderMinutesBefore; // e.g. 15, 30, 60, 1440 (1 day), 0 (at time), -1 (no reminder)
 
   CalendarEvent({
     required this.id,
@@ -21,6 +23,8 @@ class CalendarEvent {
     this.priority = 2,
     this.notes,
     this.completionStatus = 'pending',
+    this.colorHex,
+    this.reminderMinutesBefore = 15,
   });
 
   Map<String, dynamic> toMap() {
@@ -34,6 +38,8 @@ class CalendarEvent {
       'priority': priority,
       'notes': notes,
       'completion_status': completionStatus,
+      'color_hex': colorHex,
+      'reminder_minutes_before': reminderMinutesBefore,
     };
   }
 
@@ -48,6 +54,8 @@ class CalendarEvent {
       priority: map['priority'] as int? ?? 2,
       notes: map['notes'] as String?,
       completionStatus: map['completion_status'] as String? ?? 'pending',
+      colorHex: map['color_hex'] as String?,
+      reminderMinutesBefore: map['reminder_minutes_before'] as int? ?? 15,
     );
   }
 
@@ -61,6 +69,8 @@ class CalendarEvent {
     int? priority,
     String? notes,
     String? completionStatus,
+    String? colorHex,
+    int? reminderMinutesBefore,
   }) {
     return CalendarEvent(
       id: id ?? this.id,
@@ -72,6 +82,8 @@ class CalendarEvent {
       priority: priority ?? this.priority,
       notes: notes ?? this.notes,
       completionStatus: completionStatus ?? this.completionStatus,
+      colorHex: colorHex ?? this.colorHex,
+      reminderMinutesBefore: reminderMinutesBefore ?? this.reminderMinutesBefore,
     );
   }
 }
@@ -185,6 +197,8 @@ class TaskItem {
   final int priority;
   final String status; // 'todo', 'in_progress', 'completed'
   final String? notes;
+  final bool isAutoRescheduled;
+  final String? originalDueDate;
 
   TaskItem({
     required this.id,
@@ -193,6 +207,8 @@ class TaskItem {
     this.priority = 2,
     this.status = 'todo',
     this.notes,
+    this.isAutoRescheduled = false,
+    this.originalDueDate,
   });
 
   Map<String, dynamic> toMap() {
@@ -203,6 +219,8 @@ class TaskItem {
       'priority': priority,
       'status': status,
       'notes': notes,
+      'is_auto_rescheduled': isAutoRescheduled ? 1 : 0,
+      'original_due_date': originalDueDate,
     };
   }
 
@@ -214,6 +232,8 @@ class TaskItem {
       priority: map['priority'] as int? ?? 2,
       status: map['status'] as String? ?? 'todo',
       notes: map['notes'] as String?,
+      isAutoRescheduled: (map['is_auto_rescheduled'] as int? ?? 0) == 1,
+      originalDueDate: map['original_due_date'] as String?,
     );
   }
 
@@ -224,6 +244,8 @@ class TaskItem {
     int? priority,
     String? status,
     String? notes,
+    bool? isAutoRescheduled,
+    String? originalDueDate,
   }) {
     return TaskItem(
       id: id ?? this.id,
@@ -232,6 +254,8 @@ class TaskItem {
       priority: priority ?? this.priority,
       status: status ?? this.status,
       notes: notes ?? this.notes,
+      isAutoRescheduled: isAutoRescheduled ?? this.isAutoRescheduled,
+      originalDueDate: originalDueDate ?? this.originalDueDate,
     );
   }
 }
@@ -642,6 +666,7 @@ class AlarmItem {
   final String soundRingtone;
   final int snoozeDurationMinutes;
   final bool isSnoozed;
+  final bool vibrate;
 
   AlarmItem({
     required this.id,
@@ -653,6 +678,7 @@ class AlarmItem {
     this.soundRingtone = 'Gentle Chime',
     this.snoozeDurationMinutes = 5,
     this.isSnoozed = false,
+    this.vibrate = true,
   });
 
   Map<String, dynamic> toMap() {
@@ -666,6 +692,7 @@ class AlarmItem {
       'sound_ringtone': soundRingtone,
       'snooze_duration_minutes': snoozeDurationMinutes,
       'is_snoozed': isSnoozed ? 1 : 0,
+      'vibrate': vibrate ? 1 : 0,
     };
   }
 
@@ -686,6 +713,7 @@ class AlarmItem {
       soundRingtone: map['sound_ringtone'] as String? ?? 'Gentle Chime',
       snoozeDurationMinutes: map['snooze_duration_minutes'] as int? ?? 5,
       isSnoozed: (map['is_snoozed'] as int? ?? 0) == 1,
+      vibrate: (map['vibrate'] as int? ?? 1) == 1,
     );
   }
 
@@ -699,6 +727,7 @@ class AlarmItem {
     String? soundRingtone,
     int? snoozeDurationMinutes,
     bool? isSnoozed,
+    bool? vibrate,
   }) {
     return AlarmItem(
       id: id ?? this.id,
@@ -710,6 +739,7 @@ class AlarmItem {
       soundRingtone: soundRingtone ?? this.soundRingtone,
       snoozeDurationMinutes: snoozeDurationMinutes ?? this.snoozeDurationMinutes,
       isSnoozed: isSnoozed ?? this.isSnoozed,
+      vibrate: vibrate ?? this.vibrate,
     );
   }
 }
