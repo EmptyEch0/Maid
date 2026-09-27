@@ -808,3 +808,51 @@ class HabitItem {
   }
 }
 
+class TimeHelper {
+  /// Parses any time string ("19:30", "7:30 PM", "7:30pm", "7:30", "07:30 AM", "12:00 am") into (hour, minute)
+  static ({int hour, int minute}) parseTime(String timeStr) {
+    final raw = timeStr.trim();
+    if (raw.isEmpty) return (hour: 7, minute: 0);
+
+    final isPm = raw.toLowerCase().contains('pm');
+    final isAm = raw.toLowerCase().contains('am');
+
+    final clean = raw.replaceAll(RegExp(r'[a-zA-Z]'), '').trim();
+    final parts = clean.split(':');
+    int hour = int.tryParse(parts[0]) ?? 7;
+    int minute = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+
+    if (isPm && hour < 12) hour += 12;
+    if (isAm && hour == 12) hour = 0;
+
+    if (hour < 0 || hour > 23) hour = hour.clamp(0, 23);
+    if (minute < 0 || minute > 59) minute = minute.clamp(0, 59);
+
+    return (hour: hour, minute: minute);
+  }
+
+  /// Formats (hour, minute) into standard 24h "HH:mm" string (e.g. "19:30")
+  static String format24h(int hour, int minute) {
+    return '${hour.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')}';
+  }
+
+  /// Formats (hour, minute) into 12h "hh:mm a" string (e.g. "07:30 PM")
+  static String format12h(int hour, int minute) {
+    final h12 = hour == 0 ? 12 : (hour > 12 ? hour - 12 : hour);
+    final amPm = hour >= 12 ? 'PM' : 'AM';
+    return '${h12.toString().padLeft(2, '0')}:${minute.toString().padLeft(2, '0')} $amPm';
+  }
+
+  /// Normalizes any input time string to standard "HH:mm"
+  static String normalizeTime(String timeStr) {
+    final parsed = parseTime(timeStr);
+    return format24h(parsed.hour, parsed.minute);
+  }
+
+  /// Returns 12h formatted representation from any time string
+  static String to12h(String timeStr) {
+    final parsed = parseTime(timeStr);
+    return format12h(parsed.hour, parsed.minute);
+  }
+}
+

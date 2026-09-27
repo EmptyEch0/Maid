@@ -34,10 +34,6 @@ class AlarmService {
       _triggeredInCurrentMinute.clear();
     }
 
-    final formattedHour = now.hour.toString().padLeft(2, '0');
-    final formattedMinute = now.minute.toString().padLeft(2, '0');
-    final timeNowStr = '$formattedHour:$formattedMinute';
-
     for (final alarm in alarms) {
       if (!alarm.isEnabled) continue;
 
@@ -46,7 +42,8 @@ class AlarmService {
         continue;
       }
 
-      if (alarm.time == timeNowStr && !_triggeredInCurrentMinute.contains(alarm.id)) {
+      final parsed = TimeHelper.parseTime(alarm.time);
+      if (now.hour == parsed.hour && now.minute == parsed.minute && !_triggeredInCurrentMinute.contains(alarm.id)) {
         _triggeredInCurrentMinute.add(alarm.id);
         triggerAlarm(alarm);
       }

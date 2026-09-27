@@ -77,9 +77,9 @@ class NotificationService {
 
   /// Calculates the next upcoming trigger time for an alarm
   DateTime calculateNextTriggerTime(String timeStr, List<String> repeatDays) {
-    final parts = timeStr.split(':');
-    final hour = parts.length == 2 ? int.tryParse(parts[0]) ?? 0 : 0;
-    final minute = parts.length == 2 ? int.tryParse(parts[1]) ?? 0 : 0;
+    final parsed = TimeHelper.parseTime(timeStr);
+    final hour = parsed.hour;
+    final minute = parsed.minute;
 
     final now = DateTime.now();
 
@@ -132,7 +132,7 @@ class NotificationService {
 
     try {
       final targetDate = calculateNextTriggerTime(alarm.time, alarm.repeatDays);
-      final tz.TZDateTime tzDate = tz.TZDateTime.from(targetDate, tz.local);
+      final tz.TZDateTime tzDate = tz.TZDateTime.fromMillisecondsSinceEpoch(tz.local, targetDate.millisecondsSinceEpoch);
       final int notifId = alarm.id.hashCode & 0x7FFFFFFF;
       final bool effectiveVibration = alarm.vibrate && enableVibration;
 
@@ -158,7 +158,7 @@ class NotificationService {
 
       final NotificationDetails details = NotificationDetails(
         android: androidDetails,
-        iOS: DarwinNotificationDetails(
+        iOS: const DarwinNotificationDetails(
           presentAlert: true,
           presentBadge: true,
           presentSound: true,
@@ -195,6 +195,13 @@ class NotificationService {
     }
   }
 
+  /// Syncs and schedules all upcoming calendar events
+  Future<void> syncAllEvents(List<CalendarEvent> events, {bool enableVibration = true}) async {
+    for (final event in events) {
+      await scheduleEventReminder(event, enableVibration: enableVibration);
+    }
+  }
+
   /// Schedules an event reminder (supports pre-date like 1-day before, 1-hour before, etc.)
   Future<void> scheduleEventReminder(CalendarEvent event, {bool enableVibration = true}) async {
     if (event.reminderMinutesBefore < 0) {
@@ -204,14 +211,14 @@ class NotificationService {
 
     try {
       final dateParts = event.date.split('-');
-      final timeParts = event.startTime.split(':');
-      if (dateParts.length != 3 || timeParts.length < 2) return;
+      final parsedTime = TimeHelper.parseTime(event.startTime);
+      if (dateParts.length != 3) return;
 
       final int year = int.parse(dateParts[0]);
       final int month = int.parse(dateParts[1]);
       final int day = int.parse(dateParts[2]);
-      final int hour = int.parse(timeParts[0]);
-      final int minute = int.parse(timeParts[1]);
+      final int hour = parsedTime.hour;
+      final int minute = parsedTime.minute;
 
       final eventStartTime = DateTime(year, month, day, hour, minute);
       final reminderTime = eventStartTime.subtract(Duration(minutes: event.reminderMinutesBefore));
@@ -220,7 +227,7 @@ class NotificationService {
       if (reminderTime.isBefore(now)) return; // Already passed
 
       final notifId = event.id.hashCode & 0x7FFFFFFF;
-      final tz.TZDateTime tzReminder = tz.TZDateTime.from(reminderTime, tz.local);
+      final tz.TZDateTime tzReminder = tz.TZDateTime.fromMillisecondsSinceEpoch(tz.local, reminderTime.millisecondsSinceEpoch);
 
       String bodyText;
       if (event.reminderMinutesBefore == 1440) {
@@ -279,8 +286,8 @@ class NotificationService {
     bool enableVibration = true,
   }) async {
     try {
-      final tz.TZDateTime tzDate = tz.TZDateTime.from(scheduledDate, tz.local);
-      if (tzDate.isBefore(tz.TZDateTime.now(tz.local))) return;
+      final tz.TZDateTime tzDate = tz.TZDateTime.fromMillisecondsSinceEpoch(tz.local, scheduledDate.millisecondsSinceEpoch);
+      if (scheduledDate.isBefore(DateTime.now())) return;
 
       final AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
         'maid_channel_id',
@@ -336,26 +343,20 @@ class NotificationService {
       final now = DateTime.now();
 
       // 1. Morning Briefing (e.g. 09:00 AM)
-      final mParts = morningTime.split(':');
-      final mHour = int.tryParse(mParts[0]) ?? 9;
-      final mMin = mParts.length > 1 ? int.tryParse(mParts[1]) ?? 0 : 0;
-
-      var morningTarget = DateTime(now.year, now.month, now.day, mHour, mMin);
+      final mParsed = TimeHelper.parseTime(morningTime);
+      var morningTarget = DateTime(now.year, now.month, now.day, mParsed.hour, mParsed.minute);
       if (morningTarget.isBefore(now)) {
         morningTarget = morningTarget.add(const Duration(days: 1));
       }
-      final tz.TZDateTime tzMorning = tz.TZDateTime.from(morningTarget, tz.local);
+      final tz.TZDateTime tzMorning = tz.TZDateTime.fromMillisecondsSinceEpoch(tz.local, morningTarget.millisecondsSinceEpoch);
 
       // 2. Evening Briefing (e.g. 08:00 PM / 20:00)
-      final eParts = eveningTime.split(':');
-      final eHour = int.tryParse(eParts[0]) ?? 20;
-      final eMin = eParts.length > 1 ? int.tryParse(eParts[1]) ?? 0 : 0;
-
-      var eveningTarget = DateTime(now.year, now.month, now.day, eHour, eMin);
+      final eParsed = TimeHelper.parseTime(eveningTime);
+      var eveningTarget = DateTime(now.year, now.month, now.day, eParsed.hour, eParsed.minute);
       if (eveningTarget.isBefore(now)) {
         eveningTarget = eveningTarget.add(const Duration(days: 1));
       }
-      final tz.TZDateTime tzEvening = tz.TZDateTime.from(eveningTarget, tz.local);
+      final tz.TZDateTime tzEvening = tz.TZDateTime.fromMillisecondsSinceEpoch(tz.local, eveningTarget.millisecondsSinceEpoch);
 
       final AndroidNotificationDetails briefingAndroidDetails = AndroidNotificationDetails(
         'maid_alarm_channel',

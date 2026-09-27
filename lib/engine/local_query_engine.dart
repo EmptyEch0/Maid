@@ -1,4 +1,4 @@
-﻿import 'package:intl/intl.dart';
+import 'package:intl/intl.dart';
 import '../models/app_models.dart';
 import '../providers/app_provider.dart';
 import '../services/speech_service.dart';
@@ -139,9 +139,11 @@ class LocalQueryEngine {
       }
     }
 
-    // 4. "TELL MY WORK" / "TODAY TASKS" / "FULL DAY OVERVIEW"
+    // 4. "TELL MY WORK" / "TODAY TASKS" / "ALL TASKS" / "FULL DAY OVERVIEW"
     final isTodayWorkQuery = lower.contains('tell my work') ||
         lower.contains('tell my tasks') ||
+        lower.contains('all tasks') ||
+        lower.contains('all task') ||
         lower.contains('my work') ||
         lower.contains('today task') ||
         lower.contains('today\'s task') ||
@@ -149,11 +151,24 @@ class LocalQueryEngine {
         lower.contains('today\'s tasks') ||
         lower.contains('day overview') ||
         lower.contains('what do i have today') ||
+        lower.contains('what are my tasks') ||
+        lower.contains('show my tasks') ||
         lower.contains('what is my plan') ||
         lower.contains('what is the plan');
 
     if (isTodayWorkQuery) {
-      final relevantTasks = provider.pendingTodayTasks;
+      final allTasks = provider.tasks;
+      final pendingTasks = allTasks.where((t) => t.status != 'completed').toList();
+      final completedCount = allTasks.where((t) => t.status == 'completed').length;
+      final todayPending = provider.pendingTodayTasks;
+      final overduePending = pendingTasks.where((t) {
+        if (t.dueDate == null || t.dueDate!.isEmpty) return false;
+        return t.dueDate!.compareTo(todayStr) < 0;
+      }).toList();
+      final upcomingPending = pendingTasks.where((t) {
+        return !todayPending.contains(t) && !overduePending.contains(t);
+      }).toList();
+
       final todayScheduleSlots = provider.getResolvedSchedule(todayStr);
 
       List<String> spokenParts = [];
@@ -161,36 +176,71 @@ class LocalQueryEngine {
 
       spokenParts.add('Good day ${provider.userName}!');
 
-      if (relevantTasks.isNotEmpty) {
-        spokenParts.add('You have ${relevantTasks.length} pending ${relevantTasks.length == 1 ? 'task' : 'tasks'} for today.');
-        // Read out top 3 tasks
-        final top3 = relevantTasks.take(3).map((t) => t.title).join(', and ');
-        spokenParts.add('Key items are: $top3.');
-
-        detailLines.add('📋 Pending Today Tasks:');
-        for (var t in relevantTasks) {
-          final pLabel = t.priority == 3 ? '🔴 [High]' : (t.priority == 2 ? '🟡 [Med]' : '⚪');
-          final due = t.dueDate != null ? ' (Due: ${t.dueDate})' : '';
-          detailLines.add('  • $pLabel ${t.title}$due');
-        }
+      if (pendingTasks.isEmpty && allTasks.isEmpty) {
+        spokenParts.add('You have no tasks in your to-do list right now.');
+        detailLines.add('✨ No tasks in your to-do list yet.');
+      } else if (pendingTasks.isEmpty) {
+        spokenParts.add('All ${allTasks.length} of your tasks are completed! Excellent job.');
+        detailLines.add('🎉 All ${allTasks.length} tasks completed!');
       } else {
-        spokenParts.add('All your tasks are completed for today!');
+        spokenParts.add('You have ${pendingTasks.length} pending ${pendingTasks.length == 1 ? 'task' : 'tasks'} in total ($completedCount completed).');
+
+        // 1. Today's Tasks
+        if (todayPending.isNotEmpty) {
+          final titles = todayPending.map((t) => t.title).join(', ');
+          spokenParts.add('For today, you have ${todayPending.length}: $titles.');
+
+          detailLines.add('📋 Today\'s Tasks (${todayPending.length}):');
+          for (var t in todayPending) {
+            final pLabel = t.priority == 3 ? '🔴 [High]' : (t.priority == 2 ? '🟡 [Med]' : '⚪');
+            detailLines.add('  • $pLabel ${t.title}');
+          }
+        } else {
+          spokenParts.add('No pending tasks specifically due today.');
+          detailLines.add('📋 Today\'s Tasks: All caught up for today!');
+        }
+
+        // 2. Overdue Tasks
+        if (overduePending.isNotEmpty) {
+          final titles = overduePending.take(3).map((t) => t.title).join(', ');
+          spokenParts.add('You also have ${overduePending.length} overdue ${overduePending.length == 1 ? 'task' : 'tasks'}: $titles.');
+
+          detailLines.add('\n⚠️ Overdue Tasks (${overduePending.length}):');
+          for (var t in overduePending) {
+            final pLabel = t.priority == 3 ? '🔴 [High]' : (t.priority == 2 ? '🟡 [Med]' : '⚪');
+            detailLines.add('  • $pLabel ${t.title} (Due: ${t.dueDate})');
+          }
+        }
+
+        // 3. Upcoming / Other Tasks
+        if (upcomingPending.isNotEmpty) {
+          final titles = upcomingPending.take(3).map((t) => t.title).join(', ');
+          spokenParts.add('Other upcoming tasks include: $titles.');
+
+          detailLines.add('\n🔮 Upcoming & Other Tasks (${upcomingPending.length}):');
+          for (var t in upcomingPending) {
+            final pLabel = t.priority == 3 ? '🔴 [High]' : (t.priority == 2 ? '🟡 [Med]' : '⚪');
+            final dueStr = t.dueDate != null ? ' (Due: ${t.dueDate})' : '';
+            detailLines.add('  • $pLabel ${t.title}$dueStr');
+          }
+        }
       }
 
+      // Schedule slots
       if (todayScheduleSlots.isNotEmpty) {
         final slotTitles = todayScheduleSlots.take(3).map((s) => '${s.title} at ${s.startTime}').join(', ');
-        spokenParts.add('You also have ${todayScheduleSlots.length} scheduled ${todayScheduleSlots.length == 1 ? 'routine' : 'routines'}: $slotTitles.');
+        spokenParts.add('You also have ${todayScheduleSlots.length} scheduled ${todayScheduleSlots.length == 1 ? 'routine' : 'routines'} today: $slotTitles.');
         detailLines.add('\n📅 Today\'s Scheduled Routines:');
         for (var s in todayScheduleSlots) {
           detailLines.add('  • ${s.startTime} - ${s.endTime}: ${s.title}');
         }
       }
 
-      spokenParts.add('Keep up the momentum!');
+      spokenParts.add('Keep up the great productivity!');
 
       return LocalQueryResult(
         spokenText: spokenParts.join(' '),
-        displayText: '📊 Today\'s Work & Tasks Overview ($todayStr):\n\n${detailLines.join('\n')}',
+        displayText: '📊 Complete Work & Tasks Overview ($todayStr):\n\n${detailLines.join('\n')}',
         intentType: 'today_work',
         details: detailLines,
       );
@@ -208,6 +258,7 @@ class LocalQueryEngine {
       }
 
       final pendingTasks = tasks.where((t) => t.status != 'completed').toList();
+      final completedCount = tasks.where((t) => t.status == 'completed').length;
 
       if (pendingTasks.isEmpty) {
         return LocalQueryResult(
@@ -216,13 +267,13 @@ class LocalQueryEngine {
           intentType: 'tasks',
         );
       } else {
-        final topTask = pendingTasks.first;
-        final spokenStr = 'You have ${pendingTasks.length} pending tasks out of ${tasks.length} total. Next up is: ${topTask.title}.';
+        final taskTitles = pendingTasks.take(5).map((t) => t.title).join(', ');
+        final spokenStr = 'You have ${pendingTasks.length} pending tasks out of ${tasks.length} total ($completedCount completed). Key tasks are: $taskTitles.';
         final detailLines = pendingTasks.map((t) => '• [P${t.priority}] ${t.title} ${t.dueDate != null ? '(Due: ${t.dueDate})' : ''}').toList();
 
         return LocalQueryResult(
           spokenText: spokenStr,
-          displayText: '📌 Pending Tasks (${pendingTasks.length} left):\n\n${detailLines.join('\n')}',
+          displayText: '📌 All Pending Tasks (${pendingTasks.length} left, $completedCount done):\n\n${detailLines.join('\n')}',
           intentType: 'tasks',
           details: detailLines,
         );

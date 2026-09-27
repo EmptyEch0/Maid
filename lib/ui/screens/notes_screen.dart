@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../../engine/note_link_engine.dart';
 import '../../models/app_models.dart';
 import '../../providers/app_provider.dart';
+import '../../services/speech_service.dart';
 import '../widgets/animated_entry.dart';
 import '../widgets/glass_widgets.dart';
 import '../widgets/linked_text_editor.dart';
@@ -614,12 +615,27 @@ class _NotesScreenState extends State<NotesScreen> {
           ],
         ),
       ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _showNoteEditorDialog(context),
-        backgroundColor: const Color(0xFF6366F1),
-        foregroundColor: Colors.white,
-        icon: const Icon(Icons.note_add_rounded),
-        label: const Text('New Note', style: TextStyle(fontWeight: FontWeight.bold)),
+      floatingActionButton: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FloatingActionButton.extended(
+            heroTag: 'fab_voice_note',
+            onPressed: () => _showVoiceNoteDialog(context),
+            backgroundColor: const Color(0xFFEC4899),
+            foregroundColor: Colors.white,
+            icon: const Icon(Icons.mic_rounded),
+            label: const Text('Voice Note', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+          const SizedBox(width: 10),
+          FloatingActionButton.extended(
+            heroTag: 'fab_new_note',
+            onPressed: () => _showNoteEditorDialog(context),
+            backgroundColor: const Color(0xFF6366F1),
+            foregroundColor: Colors.white,
+            icon: const Icon(Icons.note_add_rounded),
+            label: const Text('New Note', style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
       ),
     );
   }
@@ -635,116 +651,377 @@ class _NotesScreenState extends State<NotesScreen> {
     }
   }
 
+  // --- Fast Speak-to-Save Voice Note Modal ---
+  void _showVoiceNoteDialog(BuildContext context) {
+    final titleController = TextEditingController();
+    final bodyController = TextEditingController();
+    String selectedCategory = 'General';
+    bool isListening = false;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+      ),
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (modalCtx, setDlgState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 24,
+                right: 24,
+                top: 24,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 24,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFEC4899).withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(Icons.mic_rounded, color: Color(0xFFEC4899), size: 26),
+                        ),
+                        const SizedBox(width: 12),
+                        const Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Speak & Save Note', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                            Text('Hands-free Speech to Text (STT)', style: TextStyle(fontSize: 11.5, color: Colors.grey)),
+                          ],
+                        ),
+                        const Spacer(),
+                        IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(ctx)),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Big Recording Pulse Container
+                    GestureDetector(
+                      onTap: () async {
+                        if (isListening) {
+                          await SpeechService.instance.stop();
+                          setDlgState(() => isListening = false);
+                        } else {
+                          setDlgState(() => isListening = true);
+                          await SpeechService.instance.listen(onResult: (text) {
+                            setDlgState(() {
+                              if (bodyController.text.isEmpty && titleController.text.isEmpty) {
+                                // Auto set first few words as title if empty
+                                final words = text.split(' ');
+                                if (words.length <= 4) {
+                                  titleController.text = text;
+                                } else {
+                                  titleController.text = words.take(4).join(' ');
+                                  bodyController.text = text;
+                                }
+                              } else {
+                                bodyController.text = text;
+                              }
+                            });
+                          });
+                        }
+                      },
+                      child: Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: isListening
+                              ? const Color(0xFFEC4899).withValues(alpha: 0.15)
+                              : const Color(0xFF6366F1).withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                            color: isListening ? const Color(0xFFEC4899) : const Color(0xFF6366F1).withValues(alpha: 0.3),
+                            width: isListening ? 2 : 1,
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Icon(
+                              isListening ? Icons.mic_rounded : Icons.mic_none_rounded,
+                              size: 40,
+                              color: isListening ? const Color(0xFFEC4899) : const Color(0xFF6366F1),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              isListening ? '🎙️ Listening... Speak now to dictate note' : '👉 Tap here to start speaking note',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
+                                color: isListening ? const Color(0xFFEC4899) : const Color(0xFF6366F1),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+
+                    const SizedBox(height: 14),
+
+                    // Note Title
+                    TextField(
+                      controller: titleController,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: InputDecoration(
+                        labelText: 'Note Title',
+                        hintText: 'e.g. Grocery List, Work Summary',
+                        prefixIcon: const Icon(Icons.title_rounded, color: Color(0xFFEC4899)),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // Note Content
+                    TextField(
+                      controller: bodyController,
+                      maxLines: 4,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: InputDecoration(
+                        labelText: 'Transcribed Note Content',
+                        hintText: 'Spoken text will appear here automatically...',
+                        alignLabelWithHint: true,
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                      ),
+                    ),
+
+                    const SizedBox(height: 12),
+
+                    // Category Selector
+                    const Text('Category:', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey)),
+                    const SizedBox(height: 6),
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: ['General', 'Shopping', 'Grocery', 'Study', 'Work', 'Personal', 'Ideas'].map((cat) {
+                          final isSel = selectedCategory == cat;
+                          return Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: ChoiceChip(
+                              label: Text(cat),
+                              selected: isSel,
+                              onSelected: (val) {
+                                if (val) setDlgState(() => selectedCategory = cat);
+                              },
+                              selectedColor: const Color(0xFFEC4899),
+                              labelStyle: TextStyle(
+                                color: isSel ? Colors.white : Colors.black87,
+                                fontSize: 11.5,
+                                fontWeight: isSel ? FontWeight.bold : FontWeight.normal,
+                              ),
+                              showCheckmark: false,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                          );
+                        }).toList(),
+                      ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    // Save Voice Note Button
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFEC4899),
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        ),
+                        onPressed: () {
+                          final title = titleController.text.trim();
+                          final body = bodyController.text.trim();
+                          if (title.isEmpty && body.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('Please speak or type something for your note.')),
+                            );
+                            return;
+                          }
+                          final noteItem = NoteItem(
+                            id: DateTime.now().millisecondsSinceEpoch.toString(),
+                            title: title.isEmpty ? 'Voice Note' : title,
+                            body: body,
+                            category: selectedCategory,
+                          );
+                          Provider.of<AppProvider>(context, listen: false).addNote(noteItem);
+                          Navigator.pop(ctx);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Row(
+                                children: [
+                                  const Icon(Icons.check_circle_rounded, color: Colors.greenAccent, size: 20),
+                                  const SizedBox(width: 8),
+                                  Expanded(child: Text('Voice note "${noteItem.displayTitle}" saved! 🎙️')),
+                                ],
+                              ),
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
+                        },
+                        icon: const Icon(Icons.save_rounded),
+                        label: const Text('Save Spoken Note', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   // --- Quick Title Rename Dialog ---
   void _showRenameDialog(BuildContext context, {required NoteItem note}) {
     final titleController = TextEditingController(text: note.isUntitled ? '' : note.title);
+    bool isListening = false;
 
     showDialog(
       context: context,
       builder: (dialogCtx) {
-        return AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-          title: Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF6366F1).withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: const Icon(Icons.drive_file_rename_outline_rounded, color: Color(0xFF6366F1), size: 22),
-              ),
-              const SizedBox(width: 10),
-              const Text('Rename Title', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            ],
-          ),
-          content: SingleChildScrollView(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Text(
-                  'Give your note a recognizable title (e.g. Grocery, Shopping, Books):',
-                  style: TextStyle(fontSize: 13, color: Colors.grey),
-                ),
-                const SizedBox(height: 14),
-                TextField(
-                  controller: titleController,
-                  autofocus: true,
-                  textCapitalization: TextCapitalization.sentences,
-                  decoration: InputDecoration(
-                    labelText: 'Note Title',
-                    hintText: 'e.g. Grocery, Shopping, Work...',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
-                    suffixIcon: IconButton(
-                      icon: const Icon(Icons.clear_rounded, size: 18),
-                      onPressed: () => titleController.clear(),
+        return StatefulBuilder(
+          builder: (ctx, setDlgState) {
+            return AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+              title: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF6366F1).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(10),
                     ),
+                    child: const Icon(Icons.drive_file_rename_outline_rounded, color: Color(0xFF6366F1), size: 22),
                   ),
-                ),
-                const SizedBox(height: 14),
-                const Text(
-                  'Quick Suggestions:',
-                  style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 6,
-                  runSpacing: 6,
-                  children: _titleSuggestions.map((suggestion) {
-                    return InkWell(
-                      borderRadius: BorderRadius.circular(12),
-                      onTap: () {
-                        titleController.text = suggestion;
-                        titleController.selection = TextSelection.fromPosition(
-                          TextPosition(offset: suggestion.length),
-                        );
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF6366F1).withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.2)),
-                        ),
-                        child: Text(
-                          suggestion,
-                          style: const TextStyle(fontSize: 12, color: Color(0xFF6366F1), fontWeight: FontWeight.w600),
+                  const SizedBox(width: 10),
+                  const Text('Rename Title', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Give your note a recognizable title (e.g. Grocery, Shopping, Books):',
+                      style: TextStyle(fontSize: 13, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 14),
+                    TextField(
+                      controller: titleController,
+                      autofocus: true,
+                      textCapitalization: TextCapitalization.sentences,
+                      decoration: InputDecoration(
+                        labelText: 'Note Title',
+                        hintText: 'e.g. Grocery, Shopping, Work...',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
+                        suffixIcon: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            IconButton(
+                              icon: Icon(
+                                isListening ? Icons.mic_rounded : Icons.mic_none_rounded,
+                                color: isListening ? Colors.redAccent : const Color(0xFF6366F1),
+                                size: 20,
+                              ),
+                              tooltip: 'Speak Title (STT)',
+                              onPressed: () async {
+                                if (isListening) {
+                                  await SpeechService.instance.stop();
+                                  setDlgState(() => isListening = false);
+                                } else {
+                                  setDlgState(() => isListening = true);
+                                  await SpeechService.instance.listen(onResult: (text) {
+                                    setDlgState(() {
+                                      titleController.text = text;
+                                    });
+                                  });
+                                }
+                              },
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.clear_rounded, size: 18),
+                              onPressed: () => titleController.clear(),
+                            ),
+                          ],
                         ),
                       ),
+                    ),
+                    const SizedBox(height: 14),
+                    const Text(
+                      'Quick Suggestions:',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.grey),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: _titleSuggestions.map((suggestion) {
+                        return InkWell(
+                          borderRadius: BorderRadius.circular(12),
+                          onTap: () {
+                            titleController.text = suggestion;
+                            titleController.selection = TextSelection.fromPosition(
+                              TextPosition(offset: suggestion.length),
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF6366F1).withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: const Color(0xFF6366F1).withValues(alpha: 0.2)),
+                            ),
+                            child: Text(
+                              suggestion,
+                              style: const TextStyle(fontSize: 12, color: Color(0xFF6366F1), fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(dialogCtx),
+                  child: const Text('Cancel'),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF6366F1),
+                    foregroundColor: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  onPressed: () {
+                    final newTitle = titleController.text.trim();
+                    final provider = Provider.of<AppProvider>(context, listen: false);
+                    provider.updateNoteTitle(note.id, newTitle.isEmpty ? 'Untitled' : newTitle);
+                    Navigator.pop(dialogCtx);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Note renamed to "${newTitle.isEmpty ? 'Untitled' : newTitle}"'),
+                        duration: const Duration(seconds: 2),
+                        behavior: SnackBarBehavior.floating,
+                      ),
                     );
-                  }).toList(),
+                  },
+                  child: const Text('Save Title'),
                 ),
               ],
-            ),
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(dialogCtx),
-              child: const Text('Cancel'),
-            ),
-            ElevatedButton(
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF6366F1),
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-              onPressed: () {
-                final newTitle = titleController.text.trim();
-                final provider = Provider.of<AppProvider>(context, listen: false);
-                provider.updateNoteTitle(note.id, newTitle.isEmpty ? 'Untitled' : newTitle);
-                Navigator.pop(dialogCtx);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('Note renamed to "${newTitle.isEmpty ? 'Untitled' : newTitle}"'),
-                    duration: const Duration(seconds: 2),
-                    behavior: SnackBarBehavior.floating,
-                  ),
-                );
-              },
-              child: const Text('Save Title'),
-            ),
-          ],
+            );
+          },
         );
       },
     );
@@ -791,6 +1068,8 @@ class _NotesScreenState extends State<NotesScreen> {
 
     String linkQuery = '';
     bool showAutocomplete = false;
+    bool isListeningTitle = false;
+    bool isListeningBody = false;
 
     showModalBottomSheet(
       context: context,
@@ -881,7 +1160,7 @@ class _NotesScreenState extends State<NotesScreen> {
 
                     const SizedBox(height: 16),
 
-                    // Title Field
+                    // Title Field with STT Mic
                     TextField(
                       controller: titleController,
                       textCapitalization: TextCapitalization.sentences,
@@ -889,6 +1168,29 @@ class _NotesScreenState extends State<NotesScreen> {
                         labelText: 'Title (e.g. Grocery, Shopping, Books)',
                         hintText: 'Leave empty for "Untitled"',
                         prefixIcon: const Icon(Icons.title_rounded, color: Color(0xFF6366F1)),
+                        suffixIcon: IconButton(
+                          icon: Icon(
+                            isListeningTitle ? Icons.mic_rounded : Icons.mic_none_rounded,
+                            color: isListeningTitle ? Colors.redAccent : const Color(0xFF6366F1),
+                          ),
+                          tooltip: 'Speak Title (STT)',
+                          onPressed: () async {
+                            if (isListeningTitle) {
+                              await SpeechService.instance.stop();
+                              setModalState(() => isListeningTitle = false);
+                            } else {
+                              setModalState(() {
+                                isListeningTitle = true;
+                                isListeningBody = false;
+                              });
+                              await SpeechService.instance.listen(onResult: (text) {
+                                setModalState(() {
+                                  titleController.text = text;
+                                });
+                              });
+                            }
+                          },
+                        ),
                         border: OutlineInputBorder(borderRadius: BorderRadius.circular(16)),
                       ),
                     ),
@@ -931,6 +1233,76 @@ class _NotesScreenState extends State<NotesScreen> {
                     ),
 
                     const SizedBox(height: 14),
+
+                    // STT Voice Dictation Bar
+                    Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: isListeningBody
+                            ? Colors.redAccent.withValues(alpha: 0.12)
+                            : const Color(0xFF6366F1).withValues(alpha: 0.08),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: isListeningBody
+                              ? Colors.redAccent.withValues(alpha: 0.4)
+                              : const Color(0xFF6366F1).withValues(alpha: 0.2),
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(
+                            isListeningBody ? Icons.mic_rounded : Icons.mic_none_rounded,
+                            color: isListeningBody ? Colors.redAccent : const Color(0xFF6366F1),
+                            size: 20,
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              isListeningBody
+                                  ? '🎙️ Listening... Speak to transcribe into note...'
+                                  : 'Speak & Dictate Note (STT)',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: isListeningBody ? Colors.redAccent : const Color(0xFF6366F1),
+                              ),
+                            ),
+                          ),
+                          ElevatedButton.icon(
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: isListeningBody ? Colors.redAccent : const Color(0xFF6366F1),
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              visualDensity: VisualDensity.compact,
+                            ),
+                            onPressed: () async {
+                              if (isListeningBody) {
+                                await SpeechService.instance.stop();
+                                setModalState(() => isListeningBody = false);
+                              } else {
+                                final existing = bodyController.text;
+                                setModalState(() {
+                                  isListeningBody = true;
+                                  isListeningTitle = false;
+                                });
+                                await SpeechService.instance.listen(onResult: (text) {
+                                  setModalState(() {
+                                    if (existing.trim().isEmpty) {
+                                      bodyController.text = text;
+                                    } else {
+                                      bodyController.text = '$existing $text';
+                                    }
+                                  });
+                                });
+                              }
+                            },
+                            icon: Icon(isListeningBody ? Icons.stop_rounded : Icons.mic_rounded, size: 16),
+                            label: Text(isListeningBody ? 'Stop' : 'Dictate (STT)'),
+                          ),
+                        ],
+                      ),
+                    ),
 
                     // Autocomplete suggestion strip when typing // or [[
                     if (showAutocomplete)

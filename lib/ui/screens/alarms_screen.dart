@@ -35,10 +35,9 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
   static String calculateTimeRemaining(String alarmTime, List<String> repeatDays, {bool isEnabled = true}) {
     if (!isEnabled) return 'Alarm is off';
 
-    final parts = alarmTime.split(':');
-    if (parts.length != 2) return '';
-    final alarmHour = int.tryParse(parts[0]) ?? 0;
-    final alarmMinute = int.tryParse(parts[1]) ?? 0;
+    final parsed = TimeHelper.parseTime(alarmTime);
+    final alarmHour = parsed.hour;
+    final alarmMinute = parsed.minute;
 
     final now = DateTime.now();
 
@@ -112,7 +111,7 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
         AlarmItem(
           id: 'test_meeting_alarm',
           title: 'Meeting with Team',
-          time: '03:00 PM',
+          time: '15:00',
           description: 'Project sprint planning and presentation review.',
           isEnabled: true,
           soundRingtone: provider.defaultAlarmTone,
@@ -349,10 +348,8 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
     final provider = Provider.of<AppProvider>(context, listen: false);
     TimeOfDay selectedTime = TimeOfDay.now();
     if (alarm != null) {
-      final parts = alarm.time.split(':');
-      if (parts.length == 2) {
-        selectedTime = TimeOfDay(hour: int.parse(parts[0]), minute: int.parse(parts[1]));
-      }
+      final parsed = TimeHelper.parseTime(alarm.time);
+      selectedTime = TimeOfDay(hour: parsed.hour, minute: parsed.minute);
     }
 
     final titleController = TextEditingController(text: alarm?.title ?? 'Wake Up Alarm');
@@ -615,7 +612,7 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
 
                     const SizedBox(height: 20),
 
-                    // Save Button
+                    // Save / Update Button
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton.icon(
@@ -658,7 +655,7 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
                                   const Icon(Icons.alarm_on_rounded, color: Colors.white, size: 20),
                                   const SizedBox(width: 10),
                                   Expanded(
-                                    child: Text('Alarm set for $timeStr ($remaining)'),
+                                    child: Text('Alarm set for ${TimeHelper.to12h(timeStr)} ($remaining)'),
                                   ),
                                 ],
                               ),
@@ -671,6 +668,42 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
                         label: Text(alarm == null ? 'Save Alarm' : 'Update Alarm'),
                       ),
                     ),
+
+                    if (alarm != null) ...[
+                      const SizedBox(height: 10),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.redAccent,
+                            side: const BorderSide(color: Colors.redAccent, width: 1.2),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                          ),
+                          icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent),
+                          label: const Text('Delete This Alarm', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                          onPressed: () async {
+                            final nav = Navigator.of(context);
+                            final scaffold = ScaffoldMessenger.of(context);
+                            final alarmTitle = alarm.title;
+                            final removedAlarm = alarm;
+                            await provider.deleteAlarm(alarm.id);
+                            AlarmSoundService.instance.stopAlarmSound();
+                            nav.pop();
+                            scaffold.showSnackBar(
+                              SnackBar(
+                                content: Text('Deleted alarm: "$alarmTitle"'),
+                                behavior: SnackBarBehavior.floating,
+                                action: SnackBarAction(
+                                  label: 'Undo',
+                                  onPressed: () => provider.addAlarm(removedAlarm),
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -892,267 +925,337 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
     final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
     final timeRemaining = calculateTimeRemaining(alarm.time, alarm.repeatDays, isEnabled: alarm.isEnabled);
+    final display12h = TimeHelper.to12h(alarm.time);
+    final display24h = TimeHelper.normalizeTime(alarm.time);
 
-    return GlassCard(
-      margin: const EdgeInsets.only(bottom: 14),
-      accentColor: alarm.isEnabled ? colorScheme.primary : Colors.grey,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Top Row: Time, Title, Switch Toggle
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+    return Dismissible(
+      key: Key('alarm_${alarm.id}'),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        margin: const EdgeInsets.only(bottom: 14),
+        decoration: BoxDecoration(
+          color: Colors.redAccent.withValues(alpha: 0.9),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: const Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Text('Delete Alarm', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+            SizedBox(width: 8),
+            Icon(Icons.delete_forever_rounded, color: Colors.white, size: 24),
+          ],
+        ),
+      ),
+      onDismissed: (_) {
+        final removedAlarm = alarm;
+        provider.deleteAlarm(alarm.id);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Deleted "${removedAlarm.title}" ($display12h)'),
+            behavior: SnackBarBehavior.floating,
+            action: SnackBarAction(
+              label: 'Undo',
+              onPressed: () => provider.addAlarm(removedAlarm),
+            ),
+          ),
+        );
+      },
+      child: GlassCard(
+        margin: const EdgeInsets.only(bottom: 14),
+        accentColor: alarm.isEnabled ? colorScheme.primary : Colors.grey,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(20),
+          onTap: () => _showAddEditAlarmDialog(context, alarm),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      alarm.time,
-                      style: TextStyle(
-                        fontSize: 32,
-                        fontWeight: FontWeight.w900,
-                        color: alarm.isEnabled
-                            ? (isDark ? Colors.white : const Color(0xFF0F172A))
-                            : (isDark ? Colors.white38 : Colors.grey),
-                      ),
-                    ),
-                    Text(
-                      alarm.title,
-                      style: TextStyle(
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                        color: alarm.isEnabled ? colorScheme.primary : Colors.grey,
-                      ),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-              Switch(
-                value: alarm.isEnabled,
-                onChanged: (_) {
-                  provider.toggleAlarmStatus(alarm);
-                  if (!alarm.isEnabled) {
-                    final remaining = calculateTimeRemaining(alarm.time, alarm.repeatDays, isEnabled: true);
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(
-                        content: Row(
+              // Top Row: Time, Title, Switch Toggle
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
                           children: [
-                            const Icon(Icons.alarm_on_rounded, color: Colors.white, size: 20),
-                            const SizedBox(width: 10),
-                            Text('Alarm enabled (rings $remaining)'),
+                            Text(
+                              display12h,
+                              style: TextStyle(
+                                fontSize: 28,
+                                fontWeight: FontWeight.w900,
+                                color: alarm.isEnabled
+                                    ? (isDark ? Colors.white : const Color(0xFF0F172A))
+                                    : (isDark ? Colors.white38 : Colors.grey),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              display24h,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: alarm.isEnabled ? colorScheme.primary.withValues(alpha: 0.8) : Colors.grey,
+                              ),
+                            ),
                           ],
                         ),
-                        behavior: SnackBarBehavior.floating,
-                        duration: const Duration(seconds: 3),
-                      ),
-                    );
-                  }
-                },
-              ),
-            ],
-          ),
-
-          const SizedBox(height: 8),
-
-          // Time Remaining Badge
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: alarm.isEnabled
-                  ? colorScheme.primary.withValues(alpha: isDark ? 0.18 : 0.1)
-                  : (isDark ? Colors.white10 : Colors.grey.shade200),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                color: alarm.isEnabled
-                    ? colorScheme.primary.withValues(alpha: 0.3)
-                    : Colors.grey.withValues(alpha: 0.2),
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  alarm.isEnabled ? Icons.schedule_rounded : Icons.alarm_off_rounded,
-                  size: 14,
-                  color: alarm.isEnabled ? colorScheme.primary : Colors.grey,
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  alarm.isEnabled ? 'Rings $timeRemaining' : 'Alarm is turned off',
-                  style: TextStyle(
-                    fontSize: 12,
-                    fontWeight: FontWeight.w700,
-                    color: alarm.isEnabled
-                        ? (isDark ? colorScheme.primary : const Color(0xFF4F46E5))
-                        : Colors.grey,
-                  ),
-                ),
-              ],
-            ),
-          ),
-
-          const SizedBox(height: 10),
-
-          // Prominent Unique Description Container
-          if (alarm.description.isNotEmpty) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(
-                  color: colorScheme.outlineVariant.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Icon(Icons.notes_rounded, size: 16, color: colorScheme.primary),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      alarm.description,
-                      style: theme.textTheme.bodyMedium?.copyWith(
-                        color: colorScheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w500,
-                      ),
+                        Text(
+                          alarm.title,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                            color: alarm.isEnabled ? colorScheme.primary : Colors.grey,
+                          ),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
                     ),
+                  ),
+                  Switch(
+                    value: alarm.isEnabled,
+                    onChanged: (_) {
+                      provider.toggleAlarmStatus(alarm);
+                      if (!alarm.isEnabled) {
+                        final remaining = calculateTimeRemaining(alarm.time, alarm.repeatDays, isEnabled: true);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Row(
+                              children: [
+                                const Icon(Icons.alarm_on_rounded, color: Colors.white, size: 20),
+                                const SizedBox(width: 10),
+                                Text('Alarm enabled (rings $remaining)'),
+                              ],
+                            ),
+                            behavior: SnackBarBehavior.floating,
+                            duration: const Duration(seconds: 3),
+                          ),
+                        );
+                      }
+                    },
                   ),
                 ],
               ),
-            ),
-            const SizedBox(height: 10),
-          ],
 
-          // Repeat Days and Ringtone Info (Bounded with Expanded / Wrap to prevent overflow)
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
-            children: [
-              // Repeat Days Chips or One-time Alarm label
-              if (alarm.repeatDays.isNotEmpty)
-                Expanded(
-                  child: Wrap(
-                    spacing: 4,
-                    runSpacing: 4,
-                    children: alarm.repeatDays.map((d) {
-                      return GlassPillBadge(
-                        label: d,
-                        color: colorScheme.secondary,
-                      );
-                    }).toList(),
-                  ),
-                )
-              else
-                Expanded(
-                  child: Text(
-                    'One-time Alarm',
-                    style: theme.textTheme.labelSmall?.copyWith(color: Colors.grey),
-                  ),
-                ),
+              const SizedBox(height: 8),
 
-              const SizedBox(width: 8),
-
-              // Ringtone info badge
+              // Time Remaining Badge
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
-                  color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.music_note_rounded, size: 12, color: colorScheme.primary),
-                    const SizedBox(width: 4),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 80),
-                      child: Text(
-                        alarm.soundRingtone,
-                        style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(width: 6),
-
-              // Vibration badge
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                decoration: BoxDecoration(
-                  color: (alarm.vibrate ? colorScheme.primary : Colors.grey).withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(8),
+                  color: alarm.isEnabled
+                      ? colorScheme.primary.withValues(alpha: isDark ? 0.18 : 0.1)
+                      : (isDark ? Colors.white10 : Colors.grey.shade200),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: alarm.isEnabled
+                        ? colorScheme.primary.withValues(alpha: 0.3)
+                        : Colors.grey.withValues(alpha: 0.2),
+                  ),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Icon(
-                      alarm.vibrate ? Icons.vibration_rounded : Icons.smartphone_rounded,
-                      size: 12,
-                      color: alarm.vibrate ? colorScheme.primary : Colors.grey,
+                      alarm.isEnabled ? Icons.schedule_rounded : Icons.alarm_off_rounded,
+                      size: 14,
+                      color: alarm.isEnabled ? colorScheme.primary : Colors.grey,
                     ),
-                    const SizedBox(width: 3),
+                    const SizedBox(width: 6),
                     Text(
-                      alarm.vibrate ? 'Vibrate' : 'Silent',
+                      alarm.isEnabled ? 'Rings $timeRemaining' : 'Alarm is turned off',
                       style: TextStyle(
-                        fontSize: 10,
-                        fontWeight: FontWeight.bold,
-                        color: alarm.vibrate ? colorScheme.primary : Colors.grey,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: alarm.isEnabled
+                            ? (isDark ? colorScheme.primary : const Color(0xFF4F46E5))
+                            : Colors.grey,
                       ),
                     ),
                   ],
                 ),
               ),
+
+              const SizedBox(height: 10),
+
+              // Prominent Unique Description Container
+              if (alarm.description.isNotEmpty) ...[
+                Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.6),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: colorScheme.outlineVariant.withValues(alpha: 0.3),
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Icon(Icons.notes_rounded, size: 16, color: colorScheme.primary),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          alarm.description,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 10),
+              ],
+
+              // Repeat Days and Ringtone Info
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Repeat Days Chips or One-time Alarm label
+                  if (alarm.repeatDays.isNotEmpty)
+                    Expanded(
+                      child: Wrap(
+                        spacing: 4,
+                        runSpacing: 4,
+                        children: alarm.repeatDays.map((d) {
+                          return GlassPillBadge(
+                            label: d,
+                            color: colorScheme.secondary,
+                          );
+                        }).toList(),
+                      ),
+                    )
+                  else
+                    Expanded(
+                      child: Text(
+                        'One-time Alarm',
+                        style: theme.textTheme.labelSmall?.copyWith(color: Colors.grey),
+                      ),
+                    ),
+
+                  const SizedBox(width: 8),
+
+                  // Ringtone info badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.music_note_rounded, size: 12, color: colorScheme.primary),
+                        const SizedBox(width: 4),
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 80),
+                          child: Text(
+                            alarm.soundRingtone,
+                            style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  const SizedBox(width: 6),
+
+                  // Vibration badge
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: (alarm.vibrate ? colorScheme.primary : Colors.grey).withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          alarm.vibrate ? Icons.vibration_rounded : Icons.smartphone_rounded,
+                          size: 12,
+                          color: alarm.vibrate ? colorScheme.primary : Colors.grey,
+                        ),
+                        const SizedBox(width: 3),
+                        Text(
+                          alarm.vibrate ? 'Vibrate' : 'Silent',
+                          style: TextStyle(
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                            color: alarm.vibrate ? colorScheme.primary : Colors.grey,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 6),
+              const Divider(height: 12, thickness: 0.5),
+
+              // Action Buttons Toolbar Row
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  // Quick Reschedule / Delay Button
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.schedule_send_rounded, color: Color(0xFF6366F1), size: 20),
+                    tooltip: 'Reschedule / Delay Alarm',
+                    onPressed: () {
+                      UniversalRescheduleDialog.showForAlarm(context, alarm);
+                    },
+                  ),
+                  // Test Ring Button
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.notifications_active_rounded, color: Colors.orangeAccent, size: 20),
+                    tooltip: 'Test Ring Alarm & Wake Up Screen',
+                    onPressed: () {
+                      _testAlarm(context, alarm);
+                    },
+                  ),
+                  // Edit Button
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.edit_rounded, size: 20),
+                    tooltip: 'Edit Alarm',
+                    onPressed: () => _showAddEditAlarmDialog(context, alarm),
+                  ),
+                  // Delete Button
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
+                    tooltip: 'Delete Alarm',
+                    onPressed: () {
+                      final removedAlarm = alarm;
+                      final alarmTitle = alarm.title;
+                      provider.deleteAlarm(alarm.id);
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Deleted "$alarmTitle" alarm'),
+                          behavior: SnackBarBehavior.floating,
+                          action: SnackBarAction(
+                            label: 'Undo',
+                            onPressed: () => provider.addAlarm(removedAlarm),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ],
+              ),
             ],
           ),
-
-          const SizedBox(height: 6),
-          const Divider(height: 12, thickness: 0.5),
-
-          // Action Buttons Toolbar Row (Clean, responsive, compact)
-          Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              // Quick Reschedule / Delay Button
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.schedule_send_rounded, color: Color(0xFF6366F1), size: 20),
-                tooltip: 'Reschedule / Delay Alarm',
-                onPressed: () {
-                  UniversalRescheduleDialog.showForAlarm(context, alarm);
-                },
-              ),
-              // Test Ring Button
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.notifications_active_rounded, color: Colors.orangeAccent, size: 20),
-                tooltip: 'Test Ring Alarm & Wake Up Screen',
-                onPressed: () {
-                  _testAlarm(context, alarm);
-                },
-              ),
-              // Edit Button
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.edit_rounded, size: 20),
-                tooltip: 'Edit Alarm',
-                onPressed: () => _showAddEditAlarmDialog(context, alarm),
-              ),
-              // Delete Button
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                icon: const Icon(Icons.delete_outline_rounded, color: Colors.redAccent, size: 20),
-                tooltip: 'Delete Alarm',
-                onPressed: () => provider.deleteAlarm(alarm.id),
-              ),
-            ],
-          ),
-        ],
+        ),
       ),
     );
   }

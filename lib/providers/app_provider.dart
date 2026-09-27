@@ -162,6 +162,7 @@ class AppProvider extends ChangeNotifier {
   void _warmupBackgroundServices() async {
     try {
       await NotificationService.instance.syncAllAlarms(_alarms, enableVibration: _vibrationEnabled);
+      await NotificationService.instance.syncAllEvents(_events, enableVibration: _vibrationEnabled);
       await syncDailyBriefingSchedule();
       AlarmService.instance.startMonitoring(() => _alarms);
       await PermissionService.instance.requestAllAppPermissions();
@@ -472,6 +473,11 @@ class AppProvider extends ChangeNotifier {
     await refreshData();
   }
 
+  Future<void> updateTask(TaskItem task) async {
+    await DatabaseHelper.instance.insertTask(task);
+    await refreshData();
+  }
+
   Future<void> toggleTaskStatus(TaskItem task) async {
     final newStatus = task.status == 'completed' ? 'todo' : 'completed';
     final updated = task.copyWith(status: newStatus);
@@ -549,6 +555,7 @@ class AppProvider extends ChangeNotifier {
         endTime: newEndTime,
       );
       await DatabaseHelper.instance.insertEvent(updated);
+      await NotificationService.instance.scheduleEventReminder(updated, enableVibration: _vibrationEnabled);
       await refreshData();
     }
   }
