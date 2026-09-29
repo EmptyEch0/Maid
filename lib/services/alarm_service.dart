@@ -1,6 +1,5 @@
 import 'dart:async';
 import '../models/app_models.dart';
-import 'notification_service.dart';
 
 class AlarmService {
   static final AlarmService instance = AlarmService._init();
@@ -12,6 +11,7 @@ class AlarmService {
 
   final Set<String> _triggeredInCurrentMinute = {};
   String _lastCheckedMinute = '';
+  final Map<String, DateTime> _snoozedUntil = {};
 
   void startMonitoring(List<AlarmItem> Function() getActiveAlarms) {
     _checkTimer?.cancel();
@@ -22,6 +22,14 @@ class AlarmService {
 
   void stopMonitoring() {
     _checkTimer?.cancel();
+  }
+
+  void snooze(String alarmId, DateTime until) {
+    _snoozedUntil[alarmId] = until;
+  }
+
+  void clearSnooze(String alarmId) {
+    _snoozedUntil.remove(alarmId);
   }
 
   void _checkAlarms(List<AlarmItem> alarms) {
@@ -35,6 +43,14 @@ class AlarmService {
     }
 
     for (final alarm in alarms) {
+      final snoozeUntil = _snoozedUntil[alarm.id];
+      if (snoozeUntil != null && !now.isBefore(snoozeUntil)) {
+        _snoozedUntil.remove(alarm.id);
+        _triggeredInCurrentMinute.add(alarm.id);
+        triggerAlarm(alarm);
+        continue;
+      }
+
       if (!alarm.isEnabled) continue;
 
       // Check repeat days if specified
@@ -50,17 +66,9 @@ class AlarmService {
     }
   }
 
+  /// Foreground-only: shows the in-app ringing overlay. The OS-level notification scheduled by
+  /// NotificationService rings independently, including when the app is closed.
   void triggerAlarm(AlarmItem alarm) {
-    // Schedule notification
-    final notificationId = alarm.id.hashCode & 0x7FFFFFFF;
-    NotificationService.instance.scheduleNotification(
-      id: notificationId,
-      title: '⏰ WAKE UP: ${alarm.title}',
-      body: alarm.description.isNotEmpty ? alarm.description : 'Your alarm is ringing!',
-      scheduledDate: DateTime.now().add(const Duration(seconds: 1)),
-    );
-
-    // Emit live stream for UI ringing overlay
     _alarmTriggerController.add(alarm);
   }
 

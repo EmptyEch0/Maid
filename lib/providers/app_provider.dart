@@ -161,11 +161,14 @@ class AppProvider extends ChangeNotifier {
 
   void _warmupBackgroundServices() async {
     try {
+      // Permissions first: scheduling before notification/exact-alarm access is granted fails
+      // silently, and nothing would re-schedule until the next launch.
+      await PermissionService.instance.requestAllAppPermissions();
+      await _disableRungOneTimeAlarms();
       await NotificationService.instance.syncAllAlarms(_alarms, enableVibration: _vibrationEnabled);
       await NotificationService.instance.syncAllEvents(_events, enableVibration: _vibrationEnabled);
       await syncDailyBriefingSchedule();
       AlarmService.instance.startMonitoring(() => _alarms);
-      await PermissionService.instance.requestAllAppPermissions();
       await SpeechService.instance.init();
       if (_wakeWordAutoTriggerEnabled) {
         SpeechService.instance.startWakeWordMonitoring(
@@ -181,6 +184,25 @@ class AppProvider extends ChangeNotifier {
         );
       }
     } catch (_) {}
+  }
+
+  /// One-time alarms that rang while the app was closed are still marked enabled in the DB;
+  /// switch them off so the launch-time sync doesn't re-arm them for tomorrow.
+  Future<void> _disableRungOneTimeAlarms() async {
+    final now = DateTime.now();
+    bool changed = false;
+    for (final alarm in _alarms) {
+      if (!alarm.isEnabled || alarm.repeatDays.isNotEmpty) continue;
+      final fireAt = await NotificationService.instance.oneTimeAlarmFireTime(alarm.id);
+      if (fireAt != null && fireAt.isBefore(now)) {
+        await DatabaseHelper.instance.insertAlarm(alarm.copyWith(isEnabled: false, isSnoozed: false));
+        changed = true;
+      }
+    }
+    if (changed) {
+      _alarms = await DatabaseHelper.instance.getAlarms();
+      notifyListeners();
+    }
   }
 
   // --- HELPER GETTERS FOR TODAY'S WORK & TASKS ---
@@ -269,20 +291,17 @@ class AppProvider extends ChangeNotifier {
     // Auto-reschedule any overdue uncompleted tasks to today
     await autoRescheduleOverdueTasks();
 
-    // Schedule notifications for all upcoming calendar events
-    for (final event in _events) {
-      await NotificationService.instance.scheduleEventReminder(event, enableVibration: _vibrationEnabled);
-    }
+    // Event reminders are (re)scheduled where events change and once at startup — not here,
+    // since re-scheduling every event on each refresh made every add/delete noticeably slow.
+    notifyListeners();
 
-    // Sync Android Home Widget data with today's live stats
+    // Sync Android Home Widget data with today's live stats (doesn't need to block the UI)
     await WidgetUpdateService.instance.updateTodoWidget(
       tasks: _tasks,
       events: _events,
       recurrenceRules: _recurrenceRules,
       exceptions: _exceptions,
     );
-
-    notifyListeners();
   }
 
   void setSelectedDate(DateTime date) {
@@ -411,6 +430,7 @@ class AppProvider extends ChangeNotifier {
           endTime: newEndTime ?? event.endTime,
         );
         await DatabaseHelper.instance.insertEvent(updated);
+        await NotificationService.instance.scheduleEventReminder(updated, enableVibration: _vibrationEnabled);
       }
     } else if (itemType == 'routine') {
       if (isExceptionOnly) {
@@ -456,6 +476,9 @@ class AppProvider extends ChangeNotifier {
   }
 
   Future<void> deleteEvent(String id) async {
+    // Remove from the UI immediately; DB + notification cleanup follows
+    _events = _events.where((e) => e.id != id).toList();
+    notifyListeners();
     await DatabaseHelper.instance.deleteEvent(id);
     await NotificationService.instance.cancelEventReminder(id);
     await refreshData();
@@ -662,6 +685,8 @@ class AppProvider extends ChangeNotifier {
 
   Future<void> toggleAlarmStatus(AlarmItem alarm) async {
     final updated = alarm.copyWith(isEnabled: !alarm.isEnabled);
+    _alarms = _alarms.map((a) => a.id == updated.id ? updated : a).toList();
+    notifyListeners();
     await DatabaseHelper.instance.insertAlarm(updated);
     if (updated.isEnabled) {
       await NotificationService.instance.scheduleAlarmNotification(updated, enableVibration: _vibrationEnabled);
@@ -672,26 +697,27 @@ class AppProvider extends ChangeNotifier {
   }
 
   Future<void> deleteAlarm(String id) async {
+    // Remove from the UI immediately; DB + notification cleanup follows
+    _alarms = _alarms.where((a) => a.id != id).toList();
+    notifyListeners();
+    AlarmService.instance.clearSnooze(id);
     await DatabaseHelper.instance.deleteAlarm(id);
     await NotificationService.instance.cancelAlarmNotification(id);
     await refreshData();
   }
 
   Future<void> snoozeAlarm(AlarmItem alarm, {int snoozeMinutes = 5}) async {
-    final now = DateTime.now().add(Duration(minutes: snoozeMinutes));
-    final newTime =
-        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
-    final updated = alarm.copyWith(
-      time: newTime,
-      isSnoozed: true,
-      isEnabled: true,
-    );
+    // Keep the alarm's configured time; snooze is a separate one-shot ring
+    final until = DateTime.now().add(Duration(minutes: snoozeMinutes));
+    final updated = alarm.copyWith(isSnoozed: true, isEnabled: true);
     await DatabaseHelper.instance.insertAlarm(updated);
-    await NotificationService.instance.scheduleAlarmNotification(updated, enableVibration: _vibrationEnabled);
+    await NotificationService.instance.snoozeAlarmNotification(updated, until, enableVibration: _vibrationEnabled);
+    AlarmService.instance.snooze(updated.id, until);
     await refreshData();
   }
 
   Future<void> dismissAlarm(AlarmItem alarm) async {
+    AlarmService.instance.clearSnooze(alarm.id);
     final updated = alarm.copyWith(isSnoozed: false);
     await DatabaseHelper.instance.insertAlarm(updated);
     // If repeat days are set, calculate and schedule next cycle

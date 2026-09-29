@@ -44,6 +44,13 @@ class PermissionService {
         if (!audioStatus.isGranted) {
           await Permission.audio.request();
         }
+
+        // 6. Exempt from battery optimization so OEM power savers (MIUI, ColorOS, FuntouchOS...)
+        // don't drop scheduled alarms while the app is in the background
+        final batteryStatus = await Permission.ignoreBatteryOptimizations.status;
+        if (!batteryStatus.isGranted) {
+          await Permission.ignoreBatteryOptimizations.request();
+        }
       }
     } catch (e) {
       debugPrint('Permission request error: $e');

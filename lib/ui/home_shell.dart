@@ -55,27 +55,34 @@ class _HomeShellState extends State<HomeShell> {
     });
 
     // Handle notification click
-    NotificationService.instance.onNotificationClick = (payload) {
-      if (payload != null && mounted) {
-        final provider = Provider.of<AppProvider>(context, listen: false);
+    NotificationService.instance.onNotificationClick = _handleNotificationPayload;
 
-        if (payload == 'daily_briefing_morning') {
-          DailyBriefingDialog.show(context, isEvening: false, autoPlaySpeech: provider.autoSpeakBriefing);
-          return;
-        } else if (payload == 'daily_briefing_evening') {
-          DailyBriefingDialog.show(context, isEvening: true, autoPlaySpeech: provider.autoSpeakBriefing);
-          return;
-        }
-
-        final matching = provider.alarms.where((a) => a.id == payload).toList();
-        if (matching.isNotEmpty) {
-          AlarmRingingDialog.show(context, matching.first);
-        }
-      }
-    };
+    // App cold-started by tapping a notification (onNotificationClick isn't fired in that case)
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final launchPayload = await NotificationService.instance.getLaunchPayload();
+      _handleNotificationPayload(launchPayload);
+    });
 
     // Listen for Widget click actions (Mic button, Add button, Open App)
     _initHomeWidgetListener();
+  }
+
+  void _handleNotificationPayload(String? payload) {
+    if (payload == null || !mounted) return;
+    final provider = Provider.of<AppProvider>(context, listen: false);
+
+    if (payload == 'daily_briefing_morning') {
+      DailyBriefingDialog.show(context, isEvening: false, autoPlaySpeech: provider.autoSpeakBriefing);
+      return;
+    } else if (payload == 'daily_briefing_evening') {
+      DailyBriefingDialog.show(context, isEvening: true, autoPlaySpeech: provider.autoSpeakBriefing);
+      return;
+    }
+
+    final matching = provider.alarms.where((a) => a.id == payload).toList();
+    if (matching.isNotEmpty) {
+      AlarmRingingDialog.show(context, matching.first);
+    }
   }
 
   Future<void> _initHomeWidgetListener() async {

@@ -79,7 +79,7 @@
             android:shadowDy="1"
             android:shadowRadius="2"
             android:ellipsize="end"
-            android:maxLines="6" />
+            android:maxLines="10" />
 
         <!-- Bottom-Right Open in Maid Button -->
         <ImageButton

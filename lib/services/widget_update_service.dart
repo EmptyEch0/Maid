@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:home_widget/home_widget.dart';
 import 'package:intl/intl.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -10,6 +11,10 @@ class WidgetUpdateService {
 
   static const String appGroupId = 'group.com.maid.app.maid';
   static const String androidWidgetProvider = 'MaidTodoWidgetProvider';
+
+  // How far ahead calendar events are handed to the widget. The native widget picks "today"
+  // itself from this list, so it stays correct after midnight even if the app isn't opened.
+  static const int _eventLookaheadDays = 14;
 
   Future<void> init() async {
     try {
@@ -26,16 +31,35 @@ class WidgetUpdateService {
   }) async {
     try {
       final now = DateTime.now();
-      final todayStr = DateFormat('yyyy-MM-dd').format(now);
+      final dayFormat = DateFormat('yyyy-MM-dd');
+      final todayStr = dayFormat.format(now);
       final dateHeader = DateFormat('EEE, MMM d').format(now); // e.g. "Thu, Sep 24"
 
-      // 1. Resolve today's scheduled events/routines
-      final todaySlots = SchedulingEngine.resolveScheduleForDate(
-        targetDate: todayStr,
-        oneOffEvents: events,
-        recurrenceRules: recurrenceRules,
-        exceptions: exceptions,
-      );
+      // 1. Resolve events/routines for today and the coming days
+      final List<Map<String, String>> upcomingEvents = [];
+      List<ScheduledSlot> todaySlots = [];
+      for (int i = 0; i < _eventLookaheadDays; i++) {
+        final dateStr = dayFormat.format(DateTime(now.year, now.month, now.day + i));
+        final slots = SchedulingEngine.resolveScheduleForDate(
+          targetDate: dateStr,
+          oneOffEvents: events,
+          recurrenceRules: recurrenceRules,
+          exceptions: exceptions,
+        );
+        if (i == 0) todaySlots = slots;
+        for (final slot in slots) {
+          final parsed = TimeHelper.parseTime(slot.startTime);
+          upcomingEvents.add({
+            'date': slot.date,
+            'time': TimeHelper.format12h(parsed.hour, parsed.minute),
+            'sort': TimeHelper.format24h(parsed.hour, parsed.minute),
+            'title': slot.title,
+            // Routines repeat daily/weekly; only one-off events are worth listing as "upcoming"
+            'recurring': slot.isRecurringInstance ? '1' : '0',
+          });
+        }
+      }
+      upcomingEvents.sort((a, b) => '${a['date']} ${a['sort']}'.compareTo('${b['date']} ${b['sort']}'));
 
       // 2. Filter pending tasks
       final todayPendingTasks = tasks.where((t) {
@@ -44,17 +68,18 @@ class WidgetUpdateService {
       }).toList();
 
       final allPendingTasks = tasks.where((t) => t.status != 'completed').toList();
+      final pendingTasksJson = allPendingTasks
+          .take(30)
+          .map((t) => {'title': t.title, 'priority': t.priority, 'due': t.dueDate ?? ''})
+          .toList();
 
+      // 3. Pre-rendered text, used as a fallback by older widget code
       final List<String> displayLines = [];
-
-      // Add Today's Scheduled Events first
-      if (todaySlots.isNotEmpty) {
-        for (final slot in todaySlots.take(3)) {
-          displayLines.add('📅 ${slot.startTime} ${slot.title}');
-        }
+      for (final slot in todaySlots.take(3)) {
+        final parsed = TimeHelper.parseTime(slot.startTime);
+        displayLines.add('📅 ${TimeHelper.format12h(parsed.hour, parsed.minute)} ${slot.title}');
       }
 
-      // Add Today's Tasks or General Pending Tasks
       final tasksToShow = todayPendingTasks.isNotEmpty ? todayPendingTasks : allPendingTasks;
       final remainingSlotCount = 5 - displayLines.length;
 
@@ -75,27 +100,28 @@ class WidgetUpdateService {
         displayLines.add('+$remaining more...');
       }
 
-      String tasksText;
-      if (displayLines.isEmpty) {
-        tasksText = '🎉 All caught up!\nNothing planned.';
-      } else {
-        tasksText = displayLines.join('\n');
-      }
+      final tasksText = displayLines.isEmpty ? '🎉 All caught up!\nNothing planned.' : displayLines.join('\n');
+      final eventsJson = jsonEncode(upcomingEvents);
+      final tasksJson = jsonEncode(pendingTasksJson);
 
-      // 1. Save data via HomeWidget (group.com.maid.app.maid / default prefs)
+      // 4. Save data via HomeWidget (HomeWidgetPreferences on Android)
       await HomeWidget.saveWidgetData<String>('widget_date', dateHeader);
       await HomeWidget.saveWidgetData<String>('widget_tasks_text', tasksText);
       await HomeWidget.saveWidgetData<int>('widget_task_count', tasksToShow.length);
+      await HomeWidget.saveWidgetData<String>('widget_events_json', eventsJson);
+      await HomeWidget.saveWidgetData<String>('widget_pending_tasks_json', tasksJson);
 
-      // 2. Also save to Flutter SharedPreferences as backup
+      // Also save to Flutter SharedPreferences as backup
       try {
         final prefs = await SharedPreferences.getInstance();
         await prefs.setString('widget_date', dateHeader);
         await prefs.setString('widget_tasks_text', tasksText);
         await prefs.setInt('widget_task_count', tasksToShow.length);
+        await prefs.setString('widget_events_json', eventsJson);
+        await prefs.setString('widget_pending_tasks_json', tasksJson);
       } catch (_) {}
 
-      // 3. Trigger native widget update
+      // 5. Trigger native widget update
       await HomeWidget.updateWidget(
         name: androidWidgetProvider,
         androidName: androidWidgetProvider,
