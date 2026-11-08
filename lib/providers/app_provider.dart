@@ -1,11 +1,14 @@
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:flutter/material.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/app_models.dart';
 import '../services/database_helper.dart';
 import '../services/notification_service.dart';
 import '../services/widget_update_service.dart';
+import '../services/briefing_voice_service.dart';
+import '../services/alarm_voice_service.dart';
 import '../engine/scheduling_engine.dart';
 import '../engine/weekly_review_engine.dart';
 import '../engine/nlp_parser_engine.dart';
@@ -16,6 +19,7 @@ import '../services/permission_service.dart';
 import '../services/speech_service.dart';
 import '../services/tts_service.dart';
 import '../engine/local_query_engine.dart';
+import '../engine/applyfields_plan_seeder.dart';
 
 class AppProvider extends ChangeNotifier {
   ThemeMode _themeMode = ThemeMode.dark;
@@ -59,6 +63,7 @@ class AppProvider extends ChangeNotifier {
   final Map<String, String?> _toneFilePaths = {};
 
   final Map<String, List<ChecklistItem>> _checklists = {};
+  Map<String, ({int done, int total})> _noteProgress = {};
 
   String _userName = 'Likhith';
   bool _dailyBriefingEnabled = true;
@@ -87,6 +92,9 @@ class AppProvider extends ChangeNotifier {
   List<ScheduleException> get exceptions => _exceptions;
   List<TaskItem> get tasks => _tasks;
   List<NoteItem> get notes => _notes;
+
+  /// Checklist progress of a note (null when the note has no checklist items).
+  ({int done, int total})? noteProgress(String noteId) => _noteProgress[noteId];
   List<StudySession> get studySessions => _studySessions;
   List<InboxItem> get inboxItems => _inboxItems;
   List<AlarmItem> get alarms => _alarms;
@@ -144,6 +152,7 @@ class AppProvider extends ChangeNotifier {
 
     // Load user & briefing settings
     _userName = prefs.getString('user_name') ?? 'Likhith';
+    AlarmVoiceService.instance.userName = _userName;
     _dailyBriefingEnabled = prefs.getBool('daily_briefing_enabled') ?? true;
     _morningBriefingTime = prefs.getString('morning_briefing_time') ?? '08:00';
     _eveningBriefingTime = prefs.getString('evening_briefing_time') ?? '21:00';
@@ -153,6 +162,12 @@ class AppProvider extends ChangeNotifier {
 
     await NotificationService.instance.init();
     await WidgetUpdateService.instance.init();
+    try {
+      // One-time import of the ApplyFields note + Week 1 calendar (only adds new rows)
+      await ApplyFieldsPlanSeeder.seedIfNeeded(enableVibration: _vibrationEnabled);
+    } catch (e) {
+      debugPrint('ApplyFields plan import failed: $e');
+    }
     await refreshData();
 
     // Warmup non-blocking background services asynchronously
@@ -168,7 +183,12 @@ class AppProvider extends ChangeNotifier {
       await NotificationService.instance.syncAllAlarms(_alarms, enableVibration: _vibrationEnabled);
       await NotificationService.instance.syncAllEvents(_events, enableVibration: _vibrationEnabled);
       await syncDailyBriefingSchedule();
-      AlarmService.instance.startMonitoring(() => _alarms);
+      if (AlarmVoiceService.instance.isSupported) {
+        // Android alarms ring natively ("Maid is calling"), so no in-app ringing monitor is needed
+        await _ensureAlarmCallScreenPermissions(prefsKey: 'asked_alarm_call_screen');
+      } else {
+        AlarmService.instance.startMonitoring(() => _alarms);
+      }
       await SpeechService.instance.init();
       if (_wakeWordAutoTriggerEnabled) {
         SpeechService.instance.startWakeWordMonitoring(
@@ -189,8 +209,25 @@ class AppProvider extends ChangeNotifier {
   /// One-time alarms that rang while the app was closed are still marked enabled in the DB;
   /// switch them off so the launch-time sync doesn't re-arm them for tomorrow.
   Future<void> _disableRungOneTimeAlarms() async {
-    final now = DateTime.now();
     bool changed = false;
+
+    if (AlarmVoiceService.instance.isSupported) {
+      // Native voice alarms report one-time alarms dismissed from the call screen
+      final completed = (await AlarmVoiceService.instance.takeCompletedOneTime()).toSet();
+      for (final alarm in _alarms) {
+        if (alarm.isEnabled && alarm.repeatDays.isEmpty && completed.contains(alarm.id)) {
+          await DatabaseHelper.instance.insertAlarm(alarm.copyWith(isEnabled: false, isSnoozed: false));
+          changed = true;
+        }
+      }
+      if (changed) {
+        _alarms = await DatabaseHelper.instance.getAlarms();
+        notifyListeners();
+      }
+      return;
+    }
+
+    final now = DateTime.now();
     for (final alarm in _alarms) {
       if (!alarm.isEnabled || alarm.repeatDays.isNotEmpty) continue;
       final fireAt = await NotificationService.instance.oneTimeAlarmFireTime(alarm.id);
@@ -203,6 +240,25 @@ class AppProvider extends ChangeNotifier {
       _alarms = await DatabaseHelper.instance.getAlarms();
       notifyListeners();
     }
+  }
+
+  /// Called when the app returns to the foreground
+  Future<void> onAppResumed() async {
+    await _disableRungOneTimeAlarms();
+  }
+
+  /// Android 14+ needs "full-screen notifications" allowed for the call screen to show over the
+  /// lock screen; without it the alarm is only a notification. Re-checked every launch until
+  /// granted (no-op once it is). The overlay permission is optional, so it's only asked once.
+  Future<void> _ensureAlarmCallScreenPermissions({required String prefsKey}) async {
+    final prefs = await SharedPreferences.getInstance();
+    if (!(prefs.getBool(prefsKey) ?? false)) {
+      await prefs.setBool(prefsKey, true);
+      // "Display over other apps": lets the call screen pop up while the phone is unlocked and in use.
+      // Awaited (returns when the user comes back) so the two settings pages don't stack.
+      if (!await Permission.systemAlertWindow.isGranted) await Permission.systemAlertWindow.request();
+    }
+    await AlarmVoiceService.instance.ensureFullScreenIntent();
   }
 
   // --- HELPER GETTERS FOR TODAY'S WORK & TASKS ---
@@ -283,6 +339,7 @@ class AppProvider extends ChangeNotifier {
     _exceptions = await db.getExceptions();
     _tasks = await db.getTasks();
     _notes = await db.getNotes();
+    _noteProgress = await db.getNoteChecklistProgress();
     _studySessions = await db.getStudySessions();
     _inboxItems = await db.getInboxItems();
     _alarms = await db.getAlarms();
@@ -302,6 +359,9 @@ class AppProvider extends ChangeNotifier {
       recurrenceRules: _recurrenceRules,
       exceptions: _exceptions,
     );
+
+    // Keep the spoken morning/evening briefing texts current with tasks & events
+    await _syncBriefingVoice();
   }
 
   void setSelectedDate(DateTime date) {
@@ -473,6 +533,22 @@ class AppProvider extends ChangeNotifier {
     await DatabaseHelper.instance.insertEvent(event);
     await NotificationService.instance.scheduleEventReminder(event, enableVibration: _vibrationEnabled);
     await refreshData();
+  }
+
+  /// Tick / untick an event as done. Done events don't remind you any more.
+  Future<void> toggleEventCompletion(String id) async {
+    final idx = _events.indexWhere((e) => e.id == id);
+    if (idx < 0) return;
+    final event = _events[idx];
+    final updated = event.copyWith(completionStatus: event.completionStatus == 'completed' ? 'pending' : 'completed');
+    _events = [..._events]..[idx] = updated;
+    notifyListeners();
+    await DatabaseHelper.instance.insertEvent(updated);
+    if (updated.completionStatus == 'completed') {
+      await NotificationService.instance.cancelEventReminder(id);
+    } else {
+      await NotificationService.instance.scheduleEventReminder(updated, enableVibration: _vibrationEnabled);
+    }
   }
 
   Future<void> deleteEvent(String id) async {
@@ -733,6 +809,10 @@ class AppProvider extends ChangeNotifier {
   }
 
   void testAlarmRing(AlarmItem alarm) {
+    if (AlarmVoiceService.instance.isSupported) {
+      AlarmVoiceService.instance.ringNow(alarm, vibrate: alarm.vibrate && _vibrationEnabled);
+      return;
+    }
     AlarmService.instance.triggerAlarm(alarm);
   }
 
@@ -826,6 +906,7 @@ class AppProvider extends ChangeNotifier {
   Future<List<ChecklistItem>> getChecklist(String parentId) async {
     final list = await DatabaseHelper.instance.getChecklistItems(parentId);
     _checklists[parentId] = list;
+    _noteProgress = await DatabaseHelper.instance.getNoteChecklistProgress();
     return list;
   }
 
@@ -842,11 +923,20 @@ class AppProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> deleteChecklistItem(ChecklistItem item) async {
+    await DatabaseHelper.instance.deleteChecklistItem(item.id);
+    await getChecklist(item.parentId);
+    notifyListeners();
+  }
+
   // --- DAILY BRIEFING & VOICE WAKE SETTINGS ---
   Future<void> setUserName(String name) async {
     _userName = name.trim().isEmpty ? 'Likhith' : name.trim();
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('user_name', _userName);
+    AlarmVoiceService.instance.userName = _userName;
+    // The voice alarm calls you by name, so re-sync alarms with the new one
+    await NotificationService.instance.syncAllAlarms(_alarms, enableVibration: _vibrationEnabled);
     await syncDailyBriefingSchedule();
     notifyListeners();
   }
@@ -901,6 +991,7 @@ class AppProvider extends ChangeNotifier {
     _autoSpeakBriefing = enabled;
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('auto_speak_briefing', enabled);
+    await _syncBriefingVoice();
     notifyListeners();
   }
 
@@ -914,6 +1005,13 @@ class AppProvider extends ChangeNotifier {
   }
 
   Future<void> syncDailyBriefingSchedule() async {
+    if (BriefingVoiceService.instance.isSupported) {
+      // Android: briefings are spoken natively at the set time; drop the old alarm-tone notifications
+      await NotificationService.instance.scheduleDailyBriefings(enabled: false);
+      await _syncBriefingVoice();
+      return;
+    }
+
     await NotificationService.instance.scheduleDailyBriefings(
       enabled: _dailyBriefingEnabled,
       morningTime: _morningBriefingTime,
@@ -925,37 +1023,91 @@ class AppProvider extends ChangeNotifier {
     );
   }
 
-  String generateDailyBriefingSpeech({bool isEvening = false}) {
+  /// Days of pre-written briefing texts handed to the native scheduler, so the spoken briefing
+  /// stays meaningful even if the app isn't opened for a few days.
+  static const int _briefingTextDays = 7;
+
+  Future<void> _syncBriefingVoice() async {
+    if (!BriefingVoiceService.instance.isSupported) return;
+
     final now = DateTime.now();
-    final todayStr = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-    final slots = getResolvedSchedule(todayStr);
-    final pending = pendingTodayTasks;
-    final completed = completedTodayTasks;
+    final Map<String, String> texts = {};
+    for (int i = 0; i < _briefingTextDays; i++) {
+      final day = DateTime(now.year, now.month, now.day + i);
+      final dateStr = _dateKey(day);
+      texts['morning_$dateStr'] = generateDailyBriefingSpeech(isEvening: false, dateStr: dateStr);
+      texts['evening_$dateStr'] = generateDailyBriefingSpeech(isEvening: true, dateStr: dateStr);
+    }
+
+    await BriefingVoiceService.instance.configure(
+      enabled: _dailyBriefingEnabled,
+      speak: _autoSpeakBriefing,
+      morningTime: _morningBriefingTime,
+      eveningTime: _eveningBriefingTime,
+      userName: _userName,
+      texts: texts,
+    );
+  }
+
+  /// Plays the real scheduled voice briefing in one minute (works with the app closed)
+  Future<void> testScheduledBriefing({required bool isEvening}) async {
+    await _syncBriefingVoice();
+    await BriefingVoiceService.instance.test(isEvening: isEvening);
+  }
+
+  String _dateKey(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  /// "19:30" / "07:30 PM" -> "7:30 PM", which text-to-speech reads naturally
+  String _spokenTime(String time) {
+    final parsed = TimeHelper.parseTime(time);
+    final h12 = parsed.hour == 0 ? 12 : (parsed.hour > 12 ? parsed.hour - 12 : parsed.hour);
+    final minutes = parsed.minute == 0 ? '' : ':${parsed.minute.toString().padLeft(2, '0')}';
+    return '$h12$minutes ${parsed.hour >= 12 ? 'PM' : 'AM'}';
+  }
+
+  /// Spoken briefing for [dateStr] (defaults to today).
+  String generateDailyBriefingSpeech({bool isEvening = false, String? dateStr}) {
+    final todayStr = _dateKey(DateTime.now());
+    final targetDate = dateStr ?? todayStr;
+    final slots = getResolvedSchedule(targetDate);
+    // Undated and overdue tasks carry over, so they count as pending for the day
+    final pending = _tasks
+        .where((t) => t.status != 'completed' && (t.dueDate == null || t.dueDate!.compareTo(targetDate) <= 0))
+        .toList();
+    final completed = _tasks
+        .where((t) => t.status == 'completed' && (t.dueDate == targetDate || t.dueDate == null))
+        .toList();
+
+    String taskCount(int n) => '$n ${n == 1 ? 'task' : 'tasks'}';
 
     if (isEvening) {
       if (pending.isEmpty) {
-        return 'Good evening $_userName! Amazing job today! You have completed all ${completed.length} tasks for today.';
-      } else {
-        final taskTitles = pending.take(3).map((t) => t.title).join(', and ');
-        return 'Good evening $_userName! You completed ${completed.length} tasks today, and have ${pending.length} remaining: $taskTitles.';
+        return targetDate == todayStr && completed.isNotEmpty
+            ? 'Good evening $_userName! Amazing job today! You have completed all ${completed.length} tasks for today.'
+            : 'Good evening $_userName! You have no pending tasks. Have a relaxing night!';
       }
-    } else {
-      if (pending.isEmpty && slots.isEmpty) {
-        return 'Good morning $_userName! You currently have no pending tasks or events scheduled for today. Have a relaxed day!';
+      final taskTitles = pending.take(3).map((t) => t.title).join(', and ');
+      if (targetDate == todayStr) {
+        return 'Good evening $_userName! You completed ${taskCount(completed.length)} today, and have ${pending.length} remaining: $taskTitles.';
       }
-
-      List<String> parts = ['Good morning $_userName!'];
-      if (pending.isNotEmpty) {
-        final taskCountStr = '${pending.length} ${pending.length == 1 ? 'task' : 'tasks'}';
-        final top3 = pending.take(3).map((t) => t.title).join(', and ');
-        parts.add('You have $taskCountStr on your to-do list: $top3.');
-      }
-      if (slots.isNotEmpty) {
-        final slotTitles = slots.take(3).map((s) => '${s.title} at ${s.startTime}').join(', and ');
-        parts.add('Scheduled events include $slotTitles.');
-      }
-      parts.add('Let\'s have a productive day!');
-      return parts.join(' ');
+      return 'Good evening $_userName! You still have ${taskCount(pending.length)} pending: $taskTitles.';
     }
+
+    if (pending.isEmpty && slots.isEmpty) {
+      return 'Good morning $_userName! You currently have no pending tasks or events scheduled for today. Have a relaxed day!';
+    }
+
+    final List<String> parts = ['Good morning $_userName!'];
+    if (pending.isNotEmpty) {
+      final top3 = pending.take(3).map((t) => t.title).join(', and ');
+      parts.add('Today you have ${taskCount(pending.length)} on your to-do list: $top3.');
+    }
+    if (slots.isNotEmpty) {
+      final slotTitles = slots.take(3).map((s) => '${s.title} at ${_spokenTime(s.startTime)}').join(', and ');
+      parts.add('Your events today: $slotTitles.');
+    }
+    parts.add("Let's have a productive day!");
+    return parts.join(' ');
   }
 }

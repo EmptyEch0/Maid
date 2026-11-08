@@ -28,7 +28,7 @@ class HomeShell extends StatefulWidget {
   State<HomeShell> createState() => _HomeShellState();
 }
 
-class _HomeShellState extends State<HomeShell> {
+class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int _currentIndex = 0;
   StreamSubscription<AlarmItem>? _alarmSub;
   StreamSubscription<Uri?>? _widgetSub;
@@ -47,6 +47,7 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Listen for live triggered alarms to pop up ringing dialog
     _alarmSub = AlarmService.instance.onAlarmTriggered.listen((alarm) {
       if (mounted) {
@@ -118,7 +119,16 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      // Pick up alarms dismissed from the lock-screen call screen while the app was in the background
+      Provider.of<AppProvider>(context, listen: false).onAppResumed();
+    }
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _alarmSub?.cancel();
     _widgetSub?.cancel();
     super.dispose();

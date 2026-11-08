@@ -5,6 +5,7 @@ import 'package:intl/intl.dart';
 import '../../providers/app_provider.dart';
 import '../../models/app_models.dart';
 import '../../engine/scheduling_engine.dart';
+import '../../engine/applyfields_plan_seeder.dart';
 import '../widgets/glass_widgets.dart';
 import '../widgets/animated_entry.dart';
 import '../widgets/universal_reschedule_dialog.dart';
@@ -68,7 +69,10 @@ class _CalendarScreenState extends State<CalendarScreen> {
     final provider = Provider.of<AppProvider>(context);
     final selectedDateStr = provider.selectedDateStr;
     final resolvedSchedule = provider.getResolvedSchedule(selectedDateStr);
-    final conflicts = SchedulingEngine.detectConflicts(resolvedSchedule);
+    // Teammates' tasks run in parallel with yours — they are not your time conflicts.
+    final conflicts = SchedulingEngine.detectConflicts(
+      resolvedSchedule.where((s) => s.category != ApplyFieldsPlanSeeder.teamCategory).toList(),
+    );
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final isDark = theme.brightness == Brightness.dark;
@@ -280,28 +284,45 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                 ? const Color(0xFF0EA5E9)
                                 : parseEventColor(slot.colorHex, slot.category));
 
+                        // One-off events can be ticked as done
+                        final CalendarEvent? event = isRecurring
+                            ? null
+                            : provider.events.where((e) => e.id == slot.id).firstOrNull;
+                        final isDone = event?.completionStatus == 'completed';
+
                         return AnimatedEntry(
                           index: index,
                           child: GlassCard(
                             margin: const EdgeInsets.only(bottom: 12),
                             accentColor: eventColor,
+                            onTap: event == null ? null : () => _showEventDetails(context, event, eventColor),
                             child: Row(
                               children: [
-                                // Time & Category Pillar
-                                Container(
-                                  width: 52,
-                                  height: 52,
-                                  decoration: BoxDecoration(
-                                    color: eventColor.withValues(alpha: 0.18),
-                                    borderRadius: BorderRadius.circular(16),
-                                    border: Border.all(color: eventColor.withValues(alpha: 0.4), width: 1.5),
-                                  ),
-                                  child: Icon(
-                                    isException
-                                        ? Icons.update_rounded
-                                        : (isRecurring ? Icons.repeat_rounded : Icons.event_rounded),
-                                    color: eventColor,
-                                    size: 26,
+                                // Time & Category Pillar — a tick box for one-off events
+                                InkWell(
+                                  borderRadius: BorderRadius.circular(16),
+                                  onTap: event == null ? null : () => provider.toggleEventCompletion(event.id),
+                                  child: Tooltip(
+                                    message: event == null ? slot.category : (isDone ? 'Mark as not done' : 'Mark as done'),
+                                    child: Container(
+                                      width: 52,
+                                      height: 52,
+                                      decoration: BoxDecoration(
+                                        color: (isDone ? const Color(0xFF10B981) : eventColor).withValues(alpha: 0.18),
+                                        borderRadius: BorderRadius.circular(16),
+                                        border: Border.all(
+                                          color: (isDone ? const Color(0xFF10B981) : eventColor).withValues(alpha: 0.4),
+                                          width: 1.5,
+                                        ),
+                                      ),
+                                      child: Icon(
+                                        event != null
+                                            ? (isDone ? Icons.check_box_rounded : Icons.check_box_outline_blank_rounded)
+                                            : (isException ? Icons.update_rounded : Icons.repeat_rounded),
+                                        color: isDone ? const Color(0xFF10B981) : eventColor,
+                                        size: 28,
+                                      ),
+                                    ),
                                   ),
                                 ),
                                 const SizedBox(width: 14),
@@ -313,8 +334,13 @@ class _CalendarScreenState extends State<CalendarScreen> {
                                     children: [
                                       Text(
                                         slot.title,
-                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                                        maxLines: 1,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 15,
+                                          decoration: isDone ? TextDecoration.lineThrough : null,
+                                          color: isDone ? (isDark ? Colors.white54 : Colors.grey.shade500) : null,
+                                        ),
+                                        maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
                                       ),
                                       const SizedBox(height: 4),
@@ -430,6 +456,74 @@ class _CalendarScreenState extends State<CalendarScreen> {
         icon: const Icon(Icons.add_rounded),
         label: const Text('New Event'),
       ),
+    );
+  }
+
+  /// Event details (who, when, steps) with a "Mark as done" button.
+  void _showEventDetails(BuildContext context, CalendarEvent event, Color color) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Theme.of(context).colorScheme.surface,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(28))),
+      builder: (ctx) {
+        return Consumer<AppProvider>(
+          builder: (ctx, provider, _) {
+            final current = provider.events.where((e) => e.id == event.id).firstOrNull ?? event;
+            final isDone = current.completionStatus == 'completed';
+            final muted = Theme.of(ctx).brightness == Brightness.dark ? Colors.white60 : Colors.grey.shade600;
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(width: 6, height: 40, decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(3))),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          current.title,
+                          style: TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            decoration: isDone ? TextDecoration.lineThrough : null,
+                          ),
+                        ),
+                      ),
+                      IconButton(icon: const Icon(Icons.close_rounded), onPressed: () => Navigator.pop(ctx)),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    '${DateFormat('EEE, d MMM yyyy').format(DateTime.parse(current.date))} · ${current.startTime} – ${current.endTime} · ${current.category}',
+                    style: TextStyle(fontSize: 13, color: muted),
+                  ),
+                  if (current.notes != null && current.notes!.trim().isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Text(current.notes!, style: const TextStyle(fontSize: 14, height: 1.45)),
+                  ],
+                  const SizedBox(height: 20),
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: isDone ? Colors.grey.shade600 : const Color(0xFF10B981),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 14),
+                      ),
+                      onPressed: () => provider.toggleEventCompletion(current.id),
+                      icon: Icon(isDone ? Icons.undo_rounded : Icons.check_rounded),
+                      label: Text(isDone ? 'Mark as not done' : 'Mark as done'),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 

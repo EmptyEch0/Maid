@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../models/app_models.dart';
 import '../../providers/app_provider.dart';
 import '../../services/alarm_sound_service.dart';
+import '../../services/alarm_voice_service.dart';
 import '../widgets/alarm_ringing_dialog.dart';
 import '../widgets/glass_widgets.dart';
 import '../widgets/animated_entry.dart';
@@ -116,6 +117,17 @@ class _AlarmsScreenState extends State<AlarmsScreen> with SingleTickerProviderSt
           isEnabled: true,
           soundRingtone: provider.defaultAlarmTone,
         );
+    if (AlarmVoiceService.instance.isSupported) {
+      // Android: ring the real "Maid is calling" voice alarm
+      provider.testAlarmRing(targetAlarm);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('📞 Maid is calling… tap Dismiss or Snooze on the notification to stop.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      return;
+    }
     AlarmRingingDialog.show(context, targetAlarm);
   }
 

@@ -8,6 +8,8 @@ import '../widgets/animated_entry.dart';
 import '../widgets/glass_widgets.dart';
 import '../widgets/linked_text_editor.dart';
 import '../widgets/note_graph_modal.dart';
+import '../widgets/note_checklist.dart';
+import '../widgets/progress_ring.dart';
 import '../widgets/universal_reschedule_dialog.dart';
 import 'notes_graph_screen.dart';
 
@@ -457,6 +459,12 @@ class _NotesScreenState extends State<NotesScreen> {
                                         ],
                                       ),
                                     ),
+                                    // Checklist progress ring (fills as items are ticked)
+                                    if (provider.noteProgress(note.id) case final p? when p.total > 0)
+                                      Padding(
+                                        padding: const EdgeInsets.only(left: 6),
+                                        child: ProgressRing(done: p.done, total: p.total, size: 40, strokeWidth: 4),
+                                      ),
                                     // Local Graph Preview Button
                                     IconButton(
                                       icon: const Text('🧠', style: TextStyle(fontSize: 16)),
@@ -1407,6 +1415,9 @@ class _NotesScreenState extends State<NotesScreen> {
                         ),
                       ],
                     ),
+
+                    // Tickable checklist (saved notes only — ticks save immediately)
+                    if (note != null) NoteChecklist(noteId: note.id),
 
                     // Backlinks & Mentioned Notes List (if editing an existing note)
                     if (backlinks.isNotEmpty || outgoingLinks.isNotEmpty) ...[

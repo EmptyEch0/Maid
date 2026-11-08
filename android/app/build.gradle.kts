@@ -44,6 +44,8 @@ android {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
+    // Panda animations on the full-screen alarm call screen (AlarmRingActivity)
+    implementation("com.airbnb.android:lottie:6.6.0")
 }
 
 kotlin {

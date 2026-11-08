@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest_all.dart' as tz;
 import '../models/app_models.dart';
+import 'alarm_voice_service.dart';
 
 class NotificationService {
   static final NotificationService instance = NotificationService._init();
@@ -326,8 +327,20 @@ class NotificationService {
   /// Schedules an alarm at the OS level. Repeating alarms are registered once per weekday with
   /// weekly repetition, so they keep ringing even if the app is never reopened.
   Future<void> scheduleAlarmNotification(AlarmItem alarm, {bool enableVibration = true}) async {
+    if (!alarm.isEnabled) {
+      await cancelAlarmNotification(alarm.id);
+      return;
+    }
+
+    if (AlarmVoiceService.instance.isSupported) {
+      // Android: the alarm rings natively as a spoken "Maid is calling" alarm. Clear any
+      // tone-based schedule left by older builds; an active native snooze is kept.
+      await _cancelToneAlarm(alarm.id);
+      await AlarmVoiceService.instance.schedule(alarm, vibrate: alarm.vibrate && enableVibration);
+      return;
+    }
+
     await cancelAlarmNotification(alarm.id);
-    if (!alarm.isEnabled) return;
 
     try {
       final parsed = TimeHelper.parseTime(alarm.time);
@@ -374,6 +387,12 @@ class NotificationService {
   /// Snoozes without touching the alarm's configured time: repeats stay armed, and a separate
   /// one-shot notification rings at [until].
   Future<void> snoozeAlarmNotification(AlarmItem alarm, DateTime until, {bool enableVibration = true}) async {
+    if (AlarmVoiceService.instance.isSupported) {
+      await AlarmVoiceService.instance.schedule(alarm, vibrate: alarm.vibrate && enableVibration);
+      await AlarmVoiceService.instance.snooze(alarm.id, until.difference(DateTime.now()));
+      return;
+    }
+
     await cancelAlarmNotification(alarm.id);
 
     try {
@@ -401,10 +420,17 @@ class NotificationService {
 
   Future<void> cancelAlarmNotification(String alarmId) async {
     await Future.wait([
+      _cancelToneAlarm(alarmId),
+      _rememberOneTimeFire(alarmId, null),
+      AlarmVoiceService.instance.cancel(alarmId),
+    ]);
+  }
+
+  Future<void> _cancelToneAlarm(String alarmId) async {
+    await Future.wait([
       // Legacy single id used by older builds
       _notifications.cancel(alarmId.hashCode & 0x7FFFFFFF),
       for (int slot = 0; slot <= _snoozeSlot; slot++) _notifications.cancel(_alarmSlotId(alarmId, slot)),
-      _rememberOneTimeFire(alarmId, null),
     ]);
   }
 

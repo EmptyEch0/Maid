@@ -443,6 +443,19 @@ class DatabaseHelper {
     return maps.map((m) => ChecklistItem.fromMap(m)).toList();
   }
 
+  /// Checklist progress per note: {noteId: (done, total)} — "## " headings are not counted.
+  Future<Map<String, ({int done, int total})>> getNoteChecklistProgress() async {
+    final db = await database;
+    final rows = await db.rawQuery(
+      "SELECT parent_id, SUM(is_done) AS done, COUNT(*) AS total FROM checklist_items "
+      "WHERE parent_type = 'note' AND text NOT LIKE '## %' GROUP BY parent_id",
+    );
+    return {
+      for (final r in rows)
+        r['parent_id'] as String: (done: (r['done'] as num?)?.toInt() ?? 0, total: (r['total'] as num?)?.toInt() ?? 0),
+    };
+  }
+
   Future<void> deleteChecklistItem(String id) async {
     final db = await database;
     await db.delete('checklist_items', where: 'id = ?', whereArgs: [id]);

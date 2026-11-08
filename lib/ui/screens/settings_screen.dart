@@ -12,6 +12,19 @@ import '../widgets/universal_reschedule_dialog.dart';
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
 
+  Future<void> _testScheduledBriefing(BuildContext context, AppProvider provider, {required bool isEvening}) async {
+    final messenger = ScaffoldMessenger.of(context);
+    await provider.testScheduledBriefing(isEvening: isEvening);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(
+          'Close the app or lock your phone — Maid will speak your ${isEvening ? 'evening' : 'morning'} briefing in 1 minute.',
+        ),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   String _format12HourTime(String timeStr) {
     try {
       final parts = timeStr.split(':');
@@ -522,8 +535,8 @@ class SettingsScreen extends StatelessWidget {
                   // Auto Speak Briefing on Notification / Launch
                   SwitchListTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('Auto-Speak Voice Briefing', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                    subtitle: const Text('Automatically read aloud tasks and events when briefing opens', style: TextStyle(fontSize: 11)),
+                    title: const Text('Speak Daily Briefing Aloud', style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                    subtitle: const Text('At the morning & evening time, Maid reads out your tasks and events in a voice (even when the app is closed). Off = a normal notification sound.', style: TextStyle(fontSize: 11)),
                     value: provider.autoSpeakBriefing,
                     activeThumbColor: const Color(0xFF6366F1),
                     onChanged: (val) => provider.setAutoSpeakBriefing(val),
@@ -565,6 +578,27 @@ class SettingsScreen extends StatelessWidget {
                           icon: const Text('🌙', style: TextStyle(fontSize: 14)),
                           label: const Text('Test Evening', style: TextStyle(fontSize: 11.5)),
                           onPressed: () => DailyBriefingDialog.show(context, isEvening: true, autoPlaySpeech: true),
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  // Test the real scheduled voice briefing (plays with the app closed / phone locked)
+                  const SizedBox(height: 6),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextButton.icon(
+                          icon: const Icon(Icons.record_voice_over_rounded, size: 16),
+                          label: const Text('Morning in 1 min', style: TextStyle(fontSize: 11.5)),
+                          onPressed: () => _testScheduledBriefing(context, provider, isEvening: false),
+                        ),
+                      ),
+                      Expanded(
+                        child: TextButton.icon(
+                          icon: const Icon(Icons.record_voice_over_rounded, size: 16),
+                          label: const Text('Evening in 1 min', style: TextStyle(fontSize: 11.5)),
+                          onPressed: () => _testScheduledBriefing(context, provider, isEvening: true),
                         ),
                       ),
                     ],
